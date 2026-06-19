@@ -1,4 +1,41 @@
 {
+  "barred_owl.mp3": {
+    "total_detections": 22,
+    "unique_species": 3,
+    "top_species": [
+      {
+        "scientific_name": "Strix varia",
+        "common_name": "Barred Owl",
+        "confidence": 0.9999
+      },
+      {
+        "scientific_name": "Strix ocellata",
+        "common_name": "Mottled Wood-Owl",
+        "confidence": 0.3513
+      },
+      {
+        "scientific_name": "Megascops asio",
+        "common_name": "Eastern Screech-Owl",
+        "confidence": 0.2989
+      }
+    ]
+  },
+  "eastern_bluebird.mp3": {
+    "total_detections": 6,
+    "unique_species": 2,
+    "top_species": [
+      {
+        "scientific_name": "Sialia sialis",
+        "common_name": "Eastern Bluebird",
+        "confidence": 0.9999
+      },
+      {
+        "scientific_name": "Icterus spurius",
+        "common_name": "Orchard Oriole",
+        "confidence": 0.6657
+      }
+    ]
+  },
   "original_XC558716_-_Soundscape.mp3": {
     "total_detections": 10,
     "unique_species": 7,
@@ -123,77 +160,6 @@
       }
     ]
   },
-  "s1_file01.wav": {
-    "total_detections": 4,
-    "unique_species": 1,
-    "top_species": [
-      {
-        "scientific_name": "Lanius collurio",
-        "common_name": "Red-backed Shrike",
-        "confidence": 0.9451
-      }
-    ]
-  },
-  "s1_file02.wav": {
-    "total_detections": 2,
-    "unique_species": 1,
-    "top_species": [
-      {
-        "scientific_name": "Lanius collurio",
-        "common_name": "Red-backed Shrike",
-        "confidence": 0.9989
-      }
-    ]
-  },
-  "s1_file03.wav": {
-    "total_detections": 3,
-    "unique_species": 1,
-    "top_species": [
-      {
-        "scientific_name": "Lanius collurio",
-        "common_name": "Red-backed Shrike",
-        "confidence": 0.9951
-      }
-    ]
-  },
-  "s2_file01.wav": {
-    "total_detections": 1,
-    "unique_species": 1,
-    "top_species": [
-      {
-        "scientific_name": "Jynx torquilla",
-        "common_name": "Eurasian Wryneck",
-        "confidence": 0.9987
-      }
-    ]
-  },
-  "s2_file02.wav": {
-    "total_detections": 3,
-    "unique_species": 2,
-    "top_species": [
-      {
-        "scientific_name": "Jynx torquilla",
-        "common_name": "Eurasian Wryneck",
-        "confidence": 0.9985
-      },
-      {
-        "scientific_name": "Anthus trivialis",
-        "common_name": "Tree Pipit",
-        "confidence": 0.3082
-      }
-    ]
-  },
-  "s2_file03.wav": {
-    "total_detections": 2,
-    "unique_species": 1,
-    "top_species": [
-      {
-        "scientific_name": "Jynx torquilla",
-        "common_name": "Eurasian Wryneck",
-        "confidence": 0.9993
-      }
-    ]
-  },
   "search_sample.mp3": {
     "total_detections": 1,
     "unique_species": 1,
@@ -233,6 +199,27 @@
         "scientific_name": "Spinus tristis",
         "common_name": "American Goldfinch",
         "confidence": 0.4765
+      }
+    ]
+  },
+  "yellow_warbler.mp3": {
+    "total_detections": 3,
+    "unique_species": 3,
+    "top_species": [
+      {
+        "scientific_name": "Setophaga petechia",
+        "common_name": "Yellow Warbler",
+        "confidence": 0.6216
+      },
+      {
+        "scientific_name": "Geothlypis trichas",
+        "common_name": "Common Yellowthroat",
+        "confidence": 0.3024
+      },
+      {
+        "scientific_name": "Sporophila telasco",
+        "common_name": "Chestnut-throated Seedeater",
+        "confidence": 0.2647
       }
     ]
   }
