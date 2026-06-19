@@ -1,0 +1,239 @@
+{
+  "original_XC558716_-_Soundscape.mp3": {
+    "total_detections": 10,
+    "unique_species": 7,
+    "top_species": [
+      {
+        "scientific_name": "Geothlypis tolmiei",
+        "common_name": "MacGillivray's Warbler",
+        "confidence": 0.6675
+      },
+      {
+        "scientific_name": "Pipilo maculatus",
+        "common_name": "Spotted Towhee",
+        "confidence": 0.6656
+      },
+      {
+        "scientific_name": "Dryobates nuttallii",
+        "common_name": "Nuttall's Woodpecker",
+        "confidence": 0.4835
+      },
+      {
+        "scientific_name": "Troglodytes aedon",
+        "common_name": "House Wren",
+        "confidence": 0.4025
+      },
+      {
+        "scientific_name": "Melanerpes formicivorus",
+        "common_name": "Acorn Woodpecker",
+        "confidence": 0.3867
+      }
+    ]
+  },
+  "original_XC563936_-_Soundscape.mp3": {
+    "total_detections": 20,
+    "unique_species": 7,
+    "top_species": [
+      {
+        "scientific_name": "Junco hyemalis",
+        "common_name": "Dark-eyed Junco",
+        "confidence": 0.9906
+      },
+      {
+        "scientific_name": "Spinus pinus",
+        "common_name": "Pine Siskin",
+        "confidence": 0.7069
+      },
+      {
+        "scientific_name": "Poecile atricapillus",
+        "common_name": "Black-capped Chickadee",
+        "confidence": 0.6371
+      },
+      {
+        "scientific_name": "Loxia leucoptera",
+        "common_name": "White-winged Crossbill",
+        "confidence": 0.45
+      },
+      {
+        "scientific_name": "Euphonia affinis",
+        "common_name": "Scrub Euphonia",
+        "confidence": 0.3885
+      }
+    ]
+  },
+  "original_sample_0.wav": {
+    "total_detections": 15,
+    "unique_species": 9,
+    "top_species": [
+      {
+        "scientific_name": "Dryobates nuttallii",
+        "common_name": "Nuttall's Woodpecker",
+        "confidence": 0.8098
+      },
+      {
+        "scientific_name": "Melanerpes formicivorus",
+        "common_name": "Acorn Woodpecker",
+        "confidence": 0.7418
+      },
+      {
+        "scientific_name": "Geothlypis tolmiei",
+        "common_name": "MacGillivray's Warbler",
+        "confidence": 0.6719
+      },
+      {
+        "scientific_name": "Setophaga nigrescens",
+        "common_name": "Black-throated Gray Warbler",
+        "confidence": 0.5852
+      },
+      {
+        "scientific_name": "Pipilo maculatus",
+        "common_name": "Spotted Towhee",
+        "confidence": 0.5095
+      }
+    ]
+  },
+  "original_sample_1.wav": {
+    "total_detections": 22,
+    "unique_species": 8,
+    "top_species": [
+      {
+        "scientific_name": "Junco hyemalis",
+        "common_name": "Dark-eyed Junco",
+        "confidence": 0.9468
+      },
+      {
+        "scientific_name": "Spinus pinus",
+        "common_name": "Pine Siskin",
+        "confidence": 0.7439
+      },
+      {
+        "scientific_name": "Loxia leucoptera",
+        "common_name": "White-winged Crossbill",
+        "confidence": 0.5609
+      },
+      {
+        "scientific_name": "Spinus psaltria",
+        "common_name": "Lesser Goldfinch",
+        "confidence": 0.5401
+      },
+      {
+        "scientific_name": "Poecile atricapillus",
+        "common_name": "Black-capped Chickadee",
+        "confidence": 0.5248
+      }
+    ]
+  },
+  "s1_file01.wav": {
+    "total_detections": 4,
+    "unique_species": 1,
+    "top_species": [
+      {
+        "scientific_name": "Lanius collurio",
+        "common_name": "Red-backed Shrike",
+        "confidence": 0.9451
+      }
+    ]
+  },
+  "s1_file02.wav": {
+    "total_detections": 2,
+    "unique_species": 1,
+    "top_species": [
+      {
+        "scientific_name": "Lanius collurio",
+        "common_name": "Red-backed Shrike",
+        "confidence": 0.9989
+      }
+    ]
+  },
+  "s1_file03.wav": {
+    "total_detections": 3,
+    "unique_species": 1,
+    "top_species": [
+      {
+        "scientific_name": "Lanius collurio",
+        "common_name": "Red-backed Shrike",
+        "confidence": 0.9951
+      }
+    ]
+  },
+  "s2_file01.wav": {
+    "total_detections": 1,
+    "unique_species": 1,
+    "top_species": [
+      {
+        "scientific_name": "Jynx torquilla",
+        "common_name": "Eurasian Wryneck",
+        "confidence": 0.9987
+      }
+    ]
+  },
+  "s2_file02.wav": {
+    "total_detections": 3,
+    "unique_species": 2,
+    "top_species": [
+      {
+        "scientific_name": "Jynx torquilla",
+        "common_name": "Eurasian Wryneck",
+        "confidence": 0.9985
+      },
+      {
+        "scientific_name": "Anthus trivialis",
+        "common_name": "Tree Pipit",
+        "confidence": 0.3082
+      }
+    ]
+  },
+  "s2_file03.wav": {
+    "total_detections": 2,
+    "unique_species": 1,
+    "top_species": [
+      {
+        "scientific_name": "Jynx torquilla",
+        "common_name": "Eurasian Wryneck",
+        "confidence": 0.9993
+      }
+    ]
+  },
+  "search_sample.mp3": {
+    "total_detections": 1,
+    "unique_species": 1,
+    "top_species": [
+      {
+        "scientific_name": "Cyanocitta cristata",
+        "common_name": "Blue Jay",
+        "confidence": 0.997
+      }
+    ]
+  },
+  "soundscape.wav": {
+    "total_detections": 25,
+    "unique_species": 9,
+    "top_species": [
+      {
+        "scientific_name": "Poecile atricapillus",
+        "common_name": "Black-capped Chickadee",
+        "confidence": 0.8141
+      },
+      {
+        "scientific_name": "Junco hyemalis",
+        "common_name": "Dark-eyed Junco",
+        "confidence": 0.7375
+      },
+      {
+        "scientific_name": "Haemorhous mexicanus",
+        "common_name": "House Finch",
+        "confidence": 0.6394
+      },
+      {
+        "scientific_name": "Engine",
+        "common_name": "Engine",
+        "confidence": 0.5168
+      },
+      {
+        "scientific_name": "Spinus tristis",
+        "common_name": "American Goldfinch",
+        "confidence": 0.4765
+      }
+    ]
+  }
+}
