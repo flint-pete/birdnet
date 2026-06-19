@@ -1,32 +1,26 @@
-# Install NVIDIA GPU image
-FROM nvcr.io/nvidia/l4t-tensorflow:r32.4.4-tf2.3-py3
+FROM python:3.12-slim
 
-# Install dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common python3-pip python3-opencv python3-setuptools libedit-dev ffmpeg git cmake mpg321 && rm -rf /var/lib/apt/lists/*
+# System deps for audio processing
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libsndfile1 \
+        libasound2-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install required Python packages
-RUN pip3 install --upgrade pip
-RUN pip3 install soundfile soundcard
+WORKDIR /app
 
-# Install pywaggle from specific release
-# RUN pip3 install git+https://github.com/waggle-sensor/pywaggle.git@0.51.1
+# Install Python deps (birdnet downloads model on first use)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Import all scripts
-COPY . ./
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Pre-download BirdNET models at build time so container starts fast
+RUN python3 -c "\
+import birdnet; \
+birdnet.load('acoustic', '2.4', 'tf'); \
+birdnet.load('geo', '2.4', 'tf'); \
+print('Models downloaded successfully')"
 
-ADD https://web.lcrc.anl.gov/public/waggle/models/osn-backup/cafb2b6a-8e1d-47c0-841f-3cad27737698/BirdNET_6K_GLOBAL_MODEL.tflite /BirdNET_6K_GLOBAL_MODEL.tflite
-#ARG SAGE_STORE_URL="https://osn.sagecontinuum.org"
-#ARG BUCKET_ID_MODEL="cafb2b6a-8e1d-47c0-841f-3cad27737698"
+COPY app.py .
 
-#ENV LC_ALL="C.UTF-8" \
-    #LANG="C.UTF-8" \
-    #SAGE_STORE_URL=${SAGE_STORE_URL} \
-    #BUCKET_ID_MODEL=${BUCKET_ID_MODEL}
-
-#RUN sage-cli.py storage files download ${BUCKET_ID_MODEL} \
-  #BirdNET_6K_GLOBAL_MODEL.tflite --target /BirdNET_6K_GLOBAL_MODEL.tflite
-
-# Add entry point to run the script
-ENTRYPOINT [ "python3", "./analyze.py" ]
-
+ENTRYPOINT ["python3", "app.py"]
