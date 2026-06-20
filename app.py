@@ -56,6 +56,9 @@ class BirdNETClassifier:
         lon: float = -1.0,
         week: int = -1,
         sf_thresh: float = 0.03,
+        bandpass_fmin: int = 0,
+        bandpass_fmax: int = 15000,
+        batch_size: int = 1,
     ):
         import birdnet
 
@@ -67,6 +70,9 @@ class BirdNETClassifier:
         self.lon = lon
         self.week = week
         self.sf_thresh = sf_thresh
+        self.bandpass_fmin = bandpass_fmin
+        self.bandpass_fmax = bandpass_fmax
+        self.batch_size = batch_size
 
         # Load acoustic model (auto-downloads on first use)
         logger.info("Loading BirdNET V2.4 acoustic model...")
@@ -104,6 +110,9 @@ class BirdNETClassifier:
             sigmoid_sensitivity=self.sensitivity,
             default_confidence_threshold=self.min_confidence,
             custom_species_list=self.species_filter,
+            bandpass_fmin=self.bandpass_fmin,
+            bandpass_fmax=self.bandpass_fmax,
+            batch_size=self.batch_size,
         )
 
         df = predictions.to_dataframe()
@@ -284,6 +293,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--top-k", type=int, default=5,
         help="Max predictions per 3-second chunk.",
     )
+    model.add_argument(
+        "--bandpass-fmin", type=int, default=0,
+        help="Bandpass filter minimum frequency in Hz. Useful to cut low-frequency noise.",
+    )
+    model.add_argument(
+        "--bandpass-fmax", type=int, default=15000,
+        help="Bandpass filter maximum frequency in Hz. Set to match audio source "
+             "(e.g. 4000 for 8kHz camera mic, 15000 for full-bandwidth USB mic).",
+    )
+    model.add_argument(
+        "--batch-size", type=int, default=1,
+        help="Number of 3-second chunks to process in parallel. Increase for long recordings.",
+    )
 
     # Location filtering
     loc = parser.add_argument_group("location filtering (eBird)")
@@ -384,6 +406,9 @@ def main():
         lon=args.lon,
         week=args.week,
         sf_thresh=args.sf_thresh,
+        bandpass_fmin=args.bandpass_fmin,
+        bandpass_fmax=args.bandpass_fmax,
+        batch_size=args.batch_size,
     )
 
     if args.dry_run:
