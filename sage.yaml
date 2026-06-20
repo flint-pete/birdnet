@@ -15,6 +15,8 @@ source:
   url: "https://github.com/flint-pete/birdnet.git"
   branch: "main"
 
+# NOTE: ECR input types support ONLY "string" and "int".
+# Float-valued args are declared as "string" and parsed by argparse at runtime.
 inputs:
 # Audio input
 - id: "input"
@@ -22,16 +24,16 @@ inputs:
 - id: "camera"
   type: "string"
 - id: "duration"
-  type: "float"
+  type: "string"
 - id: "sample-rate"
   type: "int"
 # Model parameters
 - id: "min-confidence"
-  type: "float"
+  type: "string"
 - id: "sensitivity"
-  type: "float"
+  type: "string"
 - id: "overlap"
-  type: "float"
+  type: "string"
 - id: "top-k"
   type: "int"
 - id: "bandpass-fmin"
@@ -42,18 +44,18 @@ inputs:
   type: "int"
 # Location filtering
 - id: "lat"
-  type: "float"
+  type: "string"
 - id: "lon"
-  type: "float"
+  type: "string"
 - id: "week"
   type: "int"
 - id: "sf-thresh"
-  type: "float"
+  type: "string"
 # Runtime
 - id: "num-recordings"
   type: "int"
 - id: "interval"
-  type: "float"
+  type: "string"
 
 metadata:
   ontology: env.detection.audio.*
