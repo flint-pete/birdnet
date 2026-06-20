@@ -1,0 +1,34 @@
+# BirdNET M16 Camera Job — any node with access to M16 camera
+# Captures 30s audio from Mobotix M16 built-in mic every 10 minutes,
+# classifies with BirdNET V2.4, publishes detections >= 0.60 confidence
+# to Beehive with eBird seasonal geo-filtering.
+#
+# Lat/lon auto-detected from node manifest. Week auto-calculated.
+# Same job YAML works on any node — no location hard-coding needed.
+#
+# Submit: sesctl create --from-file jobs/birdnet-m16.yaml
+# Check:  sesctl stat birdnet-m16
+# Start:  sesctl sub birdnet-m16
+# Stop:   sesctl sus birdnet-m16
+# Remove: sesctl rm birdnet-m16
+
+name: birdnet-m16
+plugins:
+  - name: birdnet-species
+    pluginSpec:
+      image: registry.sagecontinuum.org/flint-pete/birdnet-species:0.1.0
+      args:
+        - "--camera"
+        - "http://admin:PASSWORD@130.202.23.119/control/faststream.jpg?stream=MxPEG&needlength"
+        - "--duration"
+        - "30"
+        - "--min-confidence"
+        - "0.60"
+        - "--bandpass-fmax"
+        - "4000"
+nodes:
+  H00F:
+scienceRules:
+  - "schedule(birdnet-species): cronjob('birdnet-m16-cron', '*/10 * * * *')"
+successcriteria:
+  - WallClock('30day')

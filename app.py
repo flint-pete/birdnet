@@ -259,6 +259,23 @@ def current_birdnet_week() -> int:
     return max(1, min(48, week))
 
 
+MANIFEST_PATH = "/etc/waggle/node-manifest-v2.json"
+
+
+def read_node_location() -> tuple[float, float] | None:
+    """Read lat/lon from the Sage node manifest, if available."""
+    try:
+        with open(MANIFEST_PATH) as f:
+            manifest = json.load(f)
+        lat = manifest.get("gps_lat")
+        lon = manifest.get("gps_lon")
+        if lat is not None and lon is not None:
+            return float(lat), float(lon)
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError):
+        pass
+    return None
+
+
 # ── CLI ─────────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -322,11 +339,11 @@ def build_parser() -> argparse.ArgumentParser:
     loc = parser.add_argument_group("location filtering (eBird)")
     loc.add_argument(
         "--lat", type=float, default=-1,
-        help="Latitude for species range filtering. -1 to disable.",
+        help="Latitude for species range filtering. -1 = auto-detect from node manifest.",
     )
     loc.add_argument(
         "--lon", type=float, default=-1,
-        help="Longitude for species range filtering. -1 to disable.",
+        help="Longitude for species range filtering. -1 = auto-detect from node manifest.",
     )
     loc.add_argument(
         "--week", type=str, default="auto",
@@ -398,6 +415,15 @@ def main():
         logger.info("Auto-detected BirdNET week: %d", args.week)
     else:
         args.week = int(args.week)
+
+    # Resolve --lat/--lon: auto-detect from node manifest if not specified
+    if args.lat == -1 and args.lon == -1:
+        location = read_node_location()
+        if location is not None:
+            args.lat, args.lon = location
+            logger.info("Auto-detected node location: (%.4f, %.4f)", args.lat, args.lon)
+        else:
+            logger.info("No node manifest found — geo-filtering disabled")
 
     logger.info("BirdNET Species Classifier starting")
     logger.info(

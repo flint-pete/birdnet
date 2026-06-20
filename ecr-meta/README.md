@@ -49,8 +49,8 @@ python3 app.py --num-recordings 0 --duration 60 --interval 300
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--lat` | -1 | Latitude (-1 to disable) |
-| `--lon` | -1 | Longitude (-1 to disable) |
+| `--lat` | -1 | Latitude (-1 = auto-detect from node manifest) |
+| `--lon` | -1 | Longitude (-1 = auto-detect from node manifest) |
 | `--week` | auto | Week of year, 1–48. 'auto' = current week. -1 for year-round. |
 | `--sf-thresh` | 0.03 | Geo model species filter threshold |
 
