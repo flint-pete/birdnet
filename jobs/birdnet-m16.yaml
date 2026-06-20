@@ -19,7 +19,9 @@ plugins:
       image: registry.sagecontinuum.org/flint-pete/birdnet-species:0.1.0
       args:
         - "--camera"
-        - "http://admin:PASSWORD@130.202.23.119/control/faststream.jpg?stream=MxPEG&needlength"
+        # Set the camera URL with credentials at deploy time, e.g.:
+        # "http://USER:PASS@CAMERA_IP/control/faststream.jpg?stream=MxPEG&needlength"
+        - "CAMERA_URL_HERE"
         - "--duration"
         - "30"
         - "--min-confidence"

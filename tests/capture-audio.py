@@ -6,7 +6,7 @@ Records from the camera's built-in microphone, saves as a
 48kHz mono WAV file ready for BirdNET analysis.
 
 Usage:
-    python3 capture-audio.py --ip 130.202.23.119 --user admin --pass PASSWORD --duration 60
+    python3 capture-audio.py --ip CAMERA_IP --user admin --pass PASSWORD --duration 60
 """
 import argparse
 import subprocess
