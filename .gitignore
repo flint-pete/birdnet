@@ -6,7 +6,3 @@ dist/
 build/
 *.csv
 *.log
-tests/audio/*.wav
-tests/audio/*.mp3
-tests/audio/*.flac
-tests/audio/*.ogg

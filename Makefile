@@ -11,8 +11,8 @@ help: ## Show this help
 build: ## Build Docker image
 	docker build -t $(TAG) .
 
-audio: ## Download test audio files
-	python3 tests/download_test_audio.py
+audio: ## Download test audio files (no-op, files are in git)
+	@echo "Test audio files are committed to git — nothing to download."
 
 test: build test-docker ## Build and run tests in Docker (default)
 

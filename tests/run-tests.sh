@@ -54,9 +54,9 @@ EXPECTED=(
     "eastern_bluebird.mp3|Sialia sialis|0.9999"
     "search_sample.mp3|Cyanocitta cristata|0.9970"
     "original_XC563936_-_Soundscape.mp3|Junco hyemalis|0.9906"
-    "original_sample_1.wav|Junco hyemalis|0.9468"
-    "soundscape.wav|Poecile atricapillus|0.8141"
-    "original_sample_0.wav|Dryobates nuttallii|0.8098"
+    "original_sample_1.mp3|Junco hyemalis|0.9401"
+    "soundscape.mp3|Poecile atricapillus|0.8395"
+    "original_sample_0.mp3|Melanerpes formicivorus|0.7705"
     "original_XC558716_-_Soundscape.mp3|Geothlypis tolmiei|0.6675"
     "yellow_warbler.mp3|Setophaga petechia|0.6216"
 )
