@@ -308,7 +308,11 @@ def build_parser() -> argparse.ArgumentParser:
     runtime = parser.add_argument_group("runtime")
     runtime.add_argument(
         "--interval", type=float, default=0.0,
-        help="Seconds between recording cycles (0 = run once).",
+        help="Seconds between recording cycles. 0 = run once (or --num-recordings times).",
+    )
+    runtime.add_argument(
+        "--num-recordings", type=int, default=1,
+        help="Number of recording cycles to run. 0 = loop forever (requires --interval > 0).",
     )
     runtime.add_argument(
         "--output", "-o",
@@ -417,17 +421,36 @@ def main():
                 shutil.rmtree(os.path.dirname(audio_path), ignore_errors=True)
 
     def run_loop(plugin=None):
-        """Run one cycle or loop with interval."""
-        if args.interval > 0:
-            cycle = 0
-            while True:
-                cycle += 1
-                logger.info("── Cycle %d ──", cycle)
-                run_cycle(plugin)
+        """Run recording cycles based on --num-recordings and --interval.
+
+        --num-recordings 1  --interval 0    Run once and exit (default)
+        --num-recordings 6  --interval 5    Run 6 cycles, 5s gap between each
+        --num-recordings 0  --interval 60   Loop forever, 60s between cycles
+        """
+        num = args.num_recordings
+        if num == 0 and args.interval <= 0:
+            logger.error("--num-recordings 0 (loop forever) requires --interval > 0")
+            sys.exit(1)
+
+        cycle = 0
+        while True:
+            cycle += 1
+            if num > 1 or num == 0:
+                logger.info("── Cycle %d%s ──", cycle,
+                            f"/{num}" if num > 0 else "")
+            run_cycle(plugin)
+
+            # Check if we've done enough
+            if num > 0 and cycle >= num:
+                break
+
+            # Sleep between cycles
+            if args.interval > 0:
                 logger.info("Sleeping %.1fs...", args.interval)
                 time.sleep(args.interval)
-        else:
-            run_cycle(plugin)
+            elif num > 1:
+                # Multiple recordings with no explicit interval — no gap
+                pass
 
     try:
         if args.dry_run:
