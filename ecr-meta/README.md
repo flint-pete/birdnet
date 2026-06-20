@@ -1,45 +1,71 @@
-# Avian diversity monitoring on the edge
+# BirdNET — Avian Diversity Monitoring on the Edge
+
+Identifies bird, frog, and insect species from audio using BirdNET V2.4
+(6,522 species). Records from a USB microphone, network camera, or audio file.
 
 ## Usage
 
-### This plugin has the following knobs
+```bash
+# USB microphone — 15 seconds, with geo-filtering
+python3 app.py --duration 15 --lat 41.88 --lon -87.62 --week 25
 
-   **--num_rec**      'Number of microphone recordings. Each mic recording will be saved in a different file. Default to 1.'
-    
-   **--silence_int**  'Time interval [s] in which there is not sound recording. Default to 1.0.'
-    
-   **--sound_int**    'Time interval [s] in which there is sound recording. Default to 10.0.'
+# Network camera (Mobotix M16)
+python3 app.py --camera "http://admin:pass@IP/control/faststream.jpg?stream=MxPEG&needlength" --duration 15
 
-   **--i**			      'Path to input file or directory. If not specified, the plugin will record from the microphone.
-   
-   **--o**			      'Path to output directory. If not specified, the the plugin will not save the output on files (just publish them by means of pywaggle).'
-   
-   **--lat**		      'Recording location latitude. It is a float. Set -1 to ignore (which is set by default).
-   
-   **--lon**		      'Recording location longitude. It is a float. Set -1 to ignore (which is set by default).
-   
-   **--week**		      'Week of the year when the recordings were made. It is an int. Values in [1, 48]. Set -1 to ignore (which is set by default).'
-   
-   **--overlap**		  'Overlap in seconds between extracted spectrograms. It is a float. Values in [0.0, 2.9]. Default is 0.0.'
-   
-   **--sensitivity**	'Sigmoid sensitivity; Higher values result in lower sensitivity. It is a float. Values in [0.25, 2.0]. Defaults to 1.0.'
-   
-   **--min_conf**     'Minimum confidence threshold. Values in [0.01, 0.99]. It is a float. Defaults to 0.1.'
+# Audio file
+python3 app.py --input recording.wav
 
-   **--custom_list**  'Path to text file containing a list of species. Not used if not provided.
-   
-   **--keep**         'Keeps all the input files collected from the mic. Default is false'
+# 6 recordings, 10s each, 5s gap
+python3 app.py --num-recordings 6 --duration 10 --interval 5
 
+# Continuous monitoring
+python3 app.py --num-recordings 0 --duration 60 --interval 300
+```
 
+## Arguments
 
-### The Output of the plugin is a csv text file
+### Audio Input
 
-  * **Begin Time (s):** Time mark to which the detection begins.
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--input`, `-i` | None | Path to audio file |
+| `--camera` | None | Network camera audio URL (MxPEG, RTSP, etc.) |
+| `--duration` | 15.0 | Recording duration in seconds |
+| `--sample-rate` | 48000 | Audio sample rate in Hz |
 
-  * **End Time (s):** Time mark to which the detection ends.
+### Model Parameters
 
-  * **Scientific Name:** Name given to the species by scientists.
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--min-confidence` | 0.25 | Minimum confidence threshold (0.01–0.99) |
+| `--sensitivity` | 1.0 | Detection sensitivity (0.5–1.5) |
+| `--overlap` | 0.0 | Window overlap in seconds (0.0–2.9) |
+| `--top-k` | 5 | Max predictions per 3-second chunk |
+| `--bandpass-fmin` | 0 | Low-frequency cutoff in Hz |
+| `--bandpass-fmax` | 15000 | High-frequency cutoff in Hz |
+| `--batch-size` | 1 | Parallel chunk processing |
 
-  * **Common Name:** Colloquial name given to the species.
+### Location Filtering
 
-  * **Confidence:** Classification confidence level (from 0.0 to 1.0).
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--lat` | -1 | Latitude (-1 to disable) |
+| `--lon` | -1 | Longitude (-1 to disable) |
+| `--week` | -1 | Week of year, 1–48 (-1 for year-round) |
+| `--sf-thresh` | 0.03 | Geo model species filter threshold |
+
+### Runtime
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--num-recordings` | 1 | Number of cycles (0 = loop forever) |
+| `--interval` | 0.0 | Seconds between cycles |
+| `--output`, `-o` | None | CSV output path |
+| `--dry-run` | false | Test without publishing to Waggle |
+
+## Output
+
+Published to Waggle as:
+
+- `env.detection.audio.<scientific_name>` — confidence per species
+- `env.detection.audio.summary` — JSON summary per cycle

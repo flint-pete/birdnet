@@ -16,8 +16,16 @@ source:
   branch: "main"
 
 inputs:
+# Audio input
+- id: "input"
+  type: "string"
+- id: "camera"
+  type: "string"
 - id: "duration"
   type: "float"
+- id: "sample-rate"
+  type: "int"
+# Model parameters
 - id: "min-confidence"
   type: "float"
 - id: "sensitivity"
@@ -26,11 +34,23 @@ inputs:
   type: "float"
 - id: "top-k"
   type: "int"
+- id: "bandpass-fmin"
+  type: "int"
+- id: "bandpass-fmax"
+  type: "int"
+- id: "batch-size"
+  type: "int"
+# Location filtering
 - id: "lat"
   type: "float"
 - id: "lon"
   type: "float"
 - id: "week"
+  type: "int"
+- id: "sf-thresh"
+  type: "float"
+# Runtime
+- id: "num-recordings"
   type: "int"
 - id: "interval"
   type: "float"
