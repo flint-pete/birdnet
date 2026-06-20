@@ -13,7 +13,10 @@
 3. **ECR image built** — check the ECR portal at
    [portal.sagecontinuum.org/apps](https://portal.sagecontinuum.org/apps)
    and find `birdnet-species`. Copy the registry tag from the "Tags" tab
-   (e.g. `registry.sagecontinuum.org/flint-pete/birdnet-species:0.1.0`).
+   (e.g. `registry.sagecontinuum.org/beckman/birdnet-species:0.1.0`).
+
+   > **Namespace note:** the ECR namespace is `beckman`, not `flint-pete`.
+   > Use `registry.sagecontinuum.org/beckman/birdnet-species:0.1.0`.
 
 ## Quick Test (pluginctl, one-shot)
 
@@ -24,7 +27,7 @@ before scheduling. No sesctl token needed.
 
 ```bash
 sudo pluginctl deploy -n birdnet-test \
-  registry.sagecontinuum.org/flint-pete/birdnet-species:0.1.0 -- \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.1.0 -- \
   --duration 30 --min-confidence 0.60
 
 # Check logs:
@@ -36,25 +39,56 @@ sudo pluginctl rm birdnet-test
 
 ### Reolink Camera (H00F hummingbird cam)
 
+> **IMPORTANT — Reolink auth:** The Reolink BCS/FLV endpoint does **not**
+> accept HTTP basic auth (`http://user:pass@ip/...`). That form returns
+> ffmpeg "End of file" / exit 187. Credentials **must** be passed as
+> **query parameters** (`&user=...&password=...`).
+>
+> **Shell escaping:** Wrap the whole `--camera` URL in **single quotes**.
+> The password contains `!`, which bash treats as history expansion under
+> double quotes. Single quotes also protect the `&` and `?` characters.
+
 ```bash
-sudo pluginctl deploy -n birdnet-reolink-test \
-  registry.sagecontinuum.org/flint-pete/birdnet-species:0.1.0 -- \
-  --camera "http://USER:PASS@CAMERA_IP:PORT/flv?port=1935&app=bcs&stream=channel0_sub.bcs" \
+sudo pluginctl rm birdnet-test   # remove any prior pod first (see note below)
+
+sudo pluginctl deploy -n birdnet-test \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.1.0 -- \
+  --camera 'http://CAMERA_IP:PORT/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=USER&password=PASS' \
   --duration 30 --min-confidence 0.60 --bandpass-fmax 8000
 
 # Check logs:
-sudo pluginctl logs birdnet-reolink-test
+sudo pluginctl logs birdnet-test
 
 # Clean up:
-sudo pluginctl rm birdnet-reolink-test
+sudo pluginctl rm birdnet-test
 ```
+
+Confirmed-working example for the H00F hummingcam (Reolink RLC-811A at
+`10.107.0.221:10000`, user `sage`):
+
+```bash
+sudo pluginctl deploy -n birdnet-test \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.1.0 -- \
+  --camera 'http://10.107.0.221:10000/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=sage&password=SageCam!' \
+  --duration 30 --min-confidence 0.60 --bandpass-fmax 8000
+```
+
+> **"pod updates may not change fields..." error:** A `birdnet-test` pod
+> already exists and pluginctl is trying to patch it in place (k8s only
+> allows the image field to change on a running pod). Delete it first with
+> `sudo pluginctl rm birdnet-test`, wait a few seconds, then redeploy. If
+> it's stuck Terminating: `sudo kubectl delete pod birdnet-test --grace-period=0 --force`.
 
 ### Mobotix M16 Camera (H00F)
 
+> **Note:** Unlike Reolink, the Mobotix M16 MxPEG stream uses HTTP **basic
+> auth** (`http://user:pass@ip/...`) — this form is confirmed working for
+> the M16. Still wrap the URL in single quotes to protect `!`, `&`, `?`.
+
 ```bash
 sudo pluginctl deploy -n birdnet-m16-test \
-  registry.sagecontinuum.org/flint-pete/birdnet-species:0.1.0 -- \
-  --camera "http://USER:PASS@CAMERA_IP/control/faststream.jpg?stream=MxPEG&needlength" \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.1.0 -- \
+  --camera 'http://USER:PASS@CAMERA_IP/control/faststream.jpg?stream=MxPEG&needlength' \
   --duration 30 --min-confidence 0.60 --bandpass-fmax 4000
 
 # Check logs:
@@ -187,14 +221,19 @@ Only the `--camera` URL is node-specific.
 **"unrecognized arguments"** — The k3s image is stale. Rebuild and
 reimport:
 ```bash
-cd ~/birdnet && git pull
+cd ~/AI-projects/birdnet && git pull
 sudo docker build -t birdnet-species:0.1.0 .
 sudo docker save birdnet-species:0.1.0 | sudo k3s ctr images import -
 ```
 
-**"please login first"** — Camera requires token-based auth.
-The `--camera` URL should include credentials inline
-(`http://user:pass@ip/...`).
+**ffmpeg "End of file" / exit 187 (Reolink)** — Wrong auth method.
+The Reolink BCS/FLV endpoint rejects HTTP basic auth (`user:pass@ip`).
+Pass credentials as query parameters instead:
+`...&user=USER&password=PASS`, and wrap the whole URL in single quotes.
+
+**"please login first"** — Camera requires token/credential auth.
+For Reolink, append `&user=USER&password=PASS` as query parameters.
+For Mobotix M16, use inline basic auth (`http://user:pass@ip/...`).
 
 **Zero detections** — Check the audio: capture a sample, pull it
 back, and listen. If silent, the camera mic may be disabled.
