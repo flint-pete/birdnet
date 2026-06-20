@@ -1,9 +1,15 @@
 """
 BirdNET Audio Species Classifier Plugin for Sage/Waggle
 
-Records audio from the node microphone (or reads audio files), runs
-BirdNET V2.4 inference (6,522 species — birds, frogs, insects), and
-publishes per-species detections with confidence scores.
+Records audio from the node microphone, a network camera, or reads
+audio files, then runs BirdNET V2.4 inference (6,522 species — birds,
+frogs, insects) and publishes per-species detections with confidence.
+
+Audio sources (in priority order):
+  --input FILE     Read from a local audio file
+  --camera URL     Capture from a network camera via ffmpeg
+                   e.g. 'http://user:pass@IP/control/faststream.jpg?stream=MxPEG&needlength'
+  (default)        Record from the node's USB microphone via pywaggle
 
 Uses eBird geo-filtering when --lat/--lon are provided to restrict
 predictions to species expected at the node's location and time.
@@ -19,6 +25,8 @@ import argparse
 import json
 import logging
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -120,13 +128,13 @@ class BirdNETClassifier:
         return detections
 
 
-# ── audio recording ─────────────────────────────────────────────────
-def record_audio(duration_s: float, sample_rate: int = 48000) -> str:
-    """Record audio from the Waggle microphone and return path to WAV file."""
+# ── audio sources ───────────────────────────────────────────────────
+def record_from_microphone(duration_s: float, sample_rate: int = 48000) -> str:
+    """Record audio from the node's USB microphone via pywaggle."""
     from waggle.data.audio import Microphone
 
     mic = Microphone(samplerate=sample_rate)
-    logger.info("Recording %g seconds of audio at %d Hz...", duration_s, sample_rate)
+    logger.info("Recording %g seconds from USB microphone at %d Hz...", duration_s, sample_rate)
     sample = mic.record(duration_s)
 
     tmpdir = tempfile.mkdtemp(prefix="birdnet_")
@@ -136,12 +144,63 @@ def record_audio(duration_s: float, sample_rate: int = 48000) -> str:
     return wav_path
 
 
+def record_from_camera(url: str, duration_s: float, sample_rate: int = 48000) -> str:
+    """Capture audio from a network camera via ffmpeg.
+
+    Supports any ffmpeg-compatible source URL:
+      - Mobotix MxPEG:  http://user:pass@IP/control/faststream.jpg?stream=MxPEG&needlength
+      - RTSP:           rtsp://user:pass@IP/profile1/media.smp
+      - HTTP streams:   http://IP/audio.cgi
+    """
+    tmpdir = tempfile.mkdtemp(prefix="birdnet_")
+    wav_path = os.path.join(tmpdir, "camera_audio.wav")
+
+    # Detect Mobotix MxPEG streams — need -f mxg input format
+    input_args = []
+    if "faststream" in url and "MxPEG" in url:
+        input_args = ["-f", "mxg"]
+    elif url.startswith("rtsp://"):
+        input_args = ["-rtsp_transport", "tcp"]
+
+    cmd = (
+        ["ffmpeg", "-y"]
+        + input_args
+        + ["-i", url,
+           "-vn",                     # no video
+           "-acodec", "pcm_s16le",    # raw PCM output
+           "-ar", str(sample_rate),   # resample to target rate
+           "-ac", "1",               # mono
+           "-t", str(duration_s),
+           wav_path]
+    )
+
+    # Log the command without credentials
+    safe_url = url.split("@")[-1] if "@" in url else url
+    logger.info("Capturing %g seconds from camera %s...", duration_s, safe_url)
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=int(duration_s) + 30,
+    )
+
+    if result.returncode != 0:
+        logger.error("ffmpeg failed (exit %d): %s", result.returncode, result.stderr[-300:])
+        raise RuntimeError(f"ffmpeg failed to capture audio from camera: {result.stderr[-200:]}")
+
+    if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1000:
+        raise RuntimeError("ffmpeg produced no audio output — check camera URL and credentials")
+
+    size = os.path.getsize(wav_path)
+    logger.info("Camera audio saved to %s (%d bytes)", wav_path, size)
+    return wav_path
+
+
 # ── publishing ──────────────────────────────────────────────────────
 def publish_detections(plugin, detections: list[dict], timestamp: int):
     """Publish detections to Waggle."""
-    # Publish individual species detections
     for det in detections:
-        # Normalize scientific name for topic: lowercase, underscores
         topic_name = det["scientific_name"].lower().replace(" ", "_")
         plugin.publish(
             f"env.detection.audio.{topic_name}",
@@ -153,18 +212,8 @@ def publish_detections(plugin, detections: list[dict], timestamp: int):
                 "end_time_s": det["end_time"],
             },
         )
-        logger.info(
-            "  %s (%s): %.4f [%.1f-%.1fs]",
-            det["scientific_name"],
-            det["common_name"],
-            det["confidence"],
-            det["start_time"],
-            det["end_time"],
-        )
 
-    # Publish a JSON summary
     if detections:
-        # Group by species, keep highest confidence
         species_best = {}
         for det in detections:
             key = det["scientific_name"]
@@ -190,7 +239,7 @@ def publish_detections(plugin, detections: list[dict], timestamp: int):
         )
 
 
-# ── main loop ───────────────────────────────────────────────────────
+# ── CLI ─────────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="BirdNET V2.4 audio species classifier for Sage/Waggle",
@@ -201,11 +250,16 @@ def build_parser() -> argparse.ArgumentParser:
     audio = parser.add_argument_group("audio input")
     audio.add_argument(
         "--input", "-i",
-        help="Path to audio file or directory. If not specified, records from microphone.",
+        help="Path to audio file or directory. If not specified, records from microphone or camera.",
+    )
+    audio.add_argument(
+        "--camera",
+        help="URL for network camera audio. Supports Mobotix MxPEG, RTSP, or any ffmpeg source. "
+             "Example: 'http://user:pass@IP/control/faststream.jpg?stream=MxPEG&needlength'",
     )
     audio.add_argument(
         "--duration", type=float, default=15.0,
-        help="Recording duration in seconds (microphone mode).",
+        help="Recording duration in seconds (microphone or camera mode).",
     )
     audio.add_argument(
         "--sample-rate", type=int, default=48000,
@@ -268,6 +322,29 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _get_audio(args) -> tuple[str, bool]:
+    """Get audio from the configured source. Returns (path, needs_cleanup)."""
+    if args.input:
+        return args.input, False
+    elif args.camera:
+        return record_from_camera(args.camera, args.duration, args.sample_rate), True
+    else:
+        return record_from_microphone(args.duration, args.sample_rate), True
+
+
+def _log_detections(detections: list[dict]):
+    """Log detections to console."""
+    for det in detections:
+        logger.info(
+            "  %s (%s): %.4f [%.1f-%.1fs]",
+            det["scientific_name"],
+            det["common_name"],
+            det["confidence"],
+            det["start_time"],
+            det["end_time"],
+        )
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
@@ -282,6 +359,13 @@ def main():
         "  min_confidence=%.2f  sensitivity=%.1f  overlap=%.1f  top_k=%d",
         args.min_confidence, args.sensitivity, args.overlap, args.top_k,
     )
+    if args.input:
+        logger.info("  source=file (%s)", args.input)
+    elif args.camera:
+        safe_url = args.camera.split("@")[-1] if "@" in args.camera else args.camera
+        logger.info("  source=camera (%s)", safe_url)
+    else:
+        logger.info("  source=microphone (USB)")
     if args.lat > -1 and args.lon > -1:
         logger.info("  location=(%.4f, %.4f)  week=%s", args.lat, args.lon,
                      args.week if args.week > 0 else "all")
@@ -298,31 +382,15 @@ def main():
         sf_thresh=args.sf_thresh,
     )
 
-    # Use Plugin context if not dry-run
     if args.dry_run:
         logger.info("DRY RUN — will not publish to Waggle")
 
-    # Import Plugin only when needed (allows testing without pywaggle)
-    if not args.dry_run:
-        from waggle.plugin import Plugin
-        plugin_ctx = Plugin()
-    else:
-        plugin_ctx = None
-
-    def run_once():
-        """Record/read audio, classify, publish."""
+    def run_cycle(plugin=None):
+        """Single record-classify-publish cycle."""
         timestamp = int(time.time_ns())
-
-        # Get audio
-        if args.input:
-            audio_path = args.input
-            cleanup = False
-        else:
-            audio_path = record_audio(args.duration, args.sample_rate)
-            cleanup = True
+        audio_path, cleanup = _get_audio(args)
 
         try:
-            # Classify
             t0 = time.time()
             detections = classifier.classify_file(audio_path)
             elapsed = time.time() - t0
@@ -332,25 +400,13 @@ def main():
                 os.path.basename(audio_path), len(detections), elapsed,
             )
 
-            # Publish
             if detections:
-                if plugin_ctx is not None:
-                    publish_detections(plugin_ctx, detections, timestamp)
-                else:
-                    # Dry-run: just log
-                    for det in detections:
-                        logger.info(
-                            "  %s (%s): %.4f [%.1f-%.1fs]",
-                            det["scientific_name"],
-                            det["common_name"],
-                            det["confidence"],
-                            det["start_time"],
-                            det["end_time"],
-                        )
+                if plugin is not None:
+                    publish_detections(plugin, detections, timestamp)
+                _log_detections(detections)
             else:
                 logger.info("  No detections above threshold %.2f", args.min_confidence)
 
-            # Save CSV if requested
             if args.output and detections:
                 _save_csv(detections, args.output, audio_path)
 
@@ -358,71 +414,28 @@ def main():
 
         finally:
             if cleanup and os.path.exists(audio_path):
-                import shutil
                 shutil.rmtree(os.path.dirname(audio_path), ignore_errors=True)
 
-    # Main loop
-    try:
-        if plugin_ctx is not None:
-            with plugin_ctx as plugin:
-                # Reassign so publish_detections uses the entered context
-                nonlocal_hack = {"plugin": plugin}
-
-                # Monkey-patch plugin_ctx for publish_detections
-                orig_run = run_once
-
-                def run_with_plugin():
-                    timestamp = int(time.time_ns())
-                    if args.input:
-                        audio_path = args.input
-                        cleanup = False
-                    else:
-                        audio_path = record_audio(args.duration, args.sample_rate)
-                        cleanup = True
-
-                    try:
-                        t0 = time.time()
-                        detections = classifier.classify_file(audio_path)
-                        elapsed = time.time() - t0
-                        logger.info(
-                            "Classified %s: %d detections in %.2fs",
-                            os.path.basename(audio_path), len(detections), elapsed,
-                        )
-                        if detections:
-                            publish_detections(plugin, detections, timestamp)
-                        else:
-                            logger.info("  No detections above threshold %.2f", args.min_confidence)
-                        if args.output and detections:
-                            _save_csv(detections, args.output, audio_path)
-                        return detections
-                    finally:
-                        if cleanup and os.path.exists(audio_path):
-                            import shutil
-                            shutil.rmtree(os.path.dirname(audio_path), ignore_errors=True)
-
-                if args.interval > 0:
-                    cycle = 0
-                    while True:
-                        cycle += 1
-                        logger.info("── Cycle %d ──", cycle)
-                        run_with_plugin()
-                        logger.info("Sleeping %.1fs...", args.interval)
-                        time.sleep(args.interval)
-                else:
-                    run_with_plugin()
+    def run_loop(plugin=None):
+        """Run one cycle or loop with interval."""
+        if args.interval > 0:
+            cycle = 0
+            while True:
+                cycle += 1
+                logger.info("── Cycle %d ──", cycle)
+                run_cycle(plugin)
+                logger.info("Sleeping %.1fs...", args.interval)
+                time.sleep(args.interval)
         else:
-            # Dry-run mode
-            if args.interval > 0:
-                cycle = 0
-                while True:
-                    cycle += 1
-                    logger.info("── Cycle %d ──", cycle)
-                    run_once()
-                    logger.info("Sleeping %.1fs...", args.interval)
-                    time.sleep(args.interval)
-            else:
-                run_once()
+            run_cycle(plugin)
 
+    try:
+        if args.dry_run:
+            run_loop(plugin=None)
+        else:
+            from waggle.plugin import Plugin
+            with Plugin() as plugin:
+                run_loop(plugin=plugin)
     except KeyboardInterrupt:
         logger.info("Interrupted — shutting down")
 
