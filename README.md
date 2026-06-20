@@ -1,97 +1,196 @@
 [![CC BY-NC-SA 4.0][cc-by-nc-sa-shield]][cc-by-nc-sa]
 
-# BirdNET_Plugin for avian diversity monitoring on the edge
-The original [BirdNET-Lite](https://github.com/kahst/BirdNET-Lite) repository with the model for identification of birds by sounds is completely developed by [Stefan Kahl](https://github.com/kahst), [Shyam Madhusudhana](https://www.birds.cornell.edu/brp/shyam-madhusudhana/), and [Holger Klinck](https://www.birds.cornell.edu/brp/holger-klinck/).
+# BirdNET — Avian Diversity Monitoring on the Edge
 
-This repository is a clone of the [original one](https://github.com/kahst/BirdNET-Lite) with the necessary modifications added in order to make it work as a plugin on the nodes of the the [Sage project](https://sagecontinuum.org/).
+A Sage/Waggle plugin for autonomous bird species identification using audio.
+Records sound from a USB microphone or network camera, runs [BirdNET V2.4](https://github.com/birdnet-team/birdnet)
+inference (6,522 species — birds, frogs, insects), and publishes per-species
+detections with confidence scores.
 
-Basically I have incorporated the [pywaggle](https://github.com/waggle-sensor/pywaggle) functionality which allows to collect sounds from microphones as inputs for the model which identifies the birds that might have produced such sounds. Afterwards I use pywaggle to publish the model results as well as performance measures.
+## Audio Sources
+
+The plugin supports three audio input modes:
+
+1. **USB microphone** (default) — records directly from the node's audio
+   input via pywaggle. Full 48 kHz bandwidth. Used on Wild Sage nodes
+   (W-series) with connected microphones.
+
+2. **Network camera** (`--camera URL`) — captures audio from a network
+   camera's built-in or attached microphone via ffmpeg. Supports Mobotix
+   MxPEG, RTSP, and any ffmpeg-compatible source.
+
+3. **Audio file** (`--input FILE`) — reads from a local WAV/MP3/FLAC file
+   for testing and batch processing.
+
+## Quick Start
+
+```bash
+# Record 15 seconds from USB mic, classify, print results
+python3 app.py --duration 15 --dry-run
+
+# Classify an audio file
+python3 app.py --input recording.wav --dry-run
+
+# Capture from a Mobotix M16 camera
+python3 app.py --camera "http://admin:pass@CAMERA_IP/control/faststream.jpg?stream=MxPEG&needlength" \
+               --duration 15 --dry-run
+
+# With eBird geo-filtering (Chicago, late June)
+python3 app.py --duration 15 --lat 41.88 --lon -87.62 --week 25 --dry-run
+
+# 6 recordings of 10 seconds each, 5-second gap between them
+python3 app.py --num-recordings 6 --duration 10 --interval 5 --dry-run
+
+# Continuous monitoring, 60-second recordings every 5 minutes
+python3 app.py --num-recordings 0 --duration 60 --interval 300
+```
+
+## Arguments
+
+### Audio Input
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--input`, `-i` | None | Path to audio file. If not set, records from mic or camera. |
+| `--camera` | None | URL for network camera audio (Mobotix MxPEG, RTSP, etc.) |
+| `--duration` | 15.0 | Recording duration in seconds (mic or camera mode) |
+| `--sample-rate` | 48000 | Audio sample rate in Hz |
+
+### Model Parameters
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--min-confidence` | 0.25 | Minimum confidence threshold (0.01–0.99) |
+| `--sensitivity` | 1.0 | Detection sensitivity (0.5–1.5). Higher = more detections. |
+| `--overlap` | 0.0 | Overlap in seconds between 3-second windows (0.0–2.9) |
+| `--top-k` | 5 | Max predictions per 3-second chunk |
+| `--bandpass-fmin` | 0 | Low-frequency cutoff in Hz |
+| `--bandpass-fmax` | 15000 | High-frequency cutoff in Hz. Match to audio source (e.g. 4000 for 8 kHz camera mic). |
+| `--batch-size` | 1 | Chunks to process in parallel. Increase for long recordings. |
+
+### Location Filtering (eBird)
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--lat` | -1 | Latitude for species range filtering. -1 to disable. |
+| `--lon` | -1 | Longitude for species range filtering. -1 to disable. |
+| `--week` | -1 | Week of year (1–48) for seasonal filtering. -1 for year-round. |
+| `--sf-thresh` | 0.03 | Species filter threshold for geo model |
+
+### Runtime
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--num-recordings` | 1 | Number of recording cycles. 0 = loop forever. |
+| `--interval` | 0.0 | Seconds between recording cycles |
+| `--output`, `-o` | None | Path to save CSV results |
+| `--dry-run` | false | Run without publishing to Waggle |
+
+## Ontology
+
+Detections are published to Waggle as:
+
+- **`env.detection.audio.<scientific_name>`** — confidence (0–1) per species per detection window, with metadata: `common_name`, `start_time_s`, `end_time_s`
+- **`env.detection.audio.summary`** — JSON summary per cycle: total detections, unique species, top species with confidences
+
+## Querying Results
+
+```python
+import sage_data_client
+
+df = sage_data_client.query(
+    start="-1h",
+    filter={
+        "name": "env.detection.audio.*",
+        "vsn": "W01B",
+    }
+)
+print(df)
+```
+
+## Build and Test
+
+```bash
+# Build Docker image
+make build
+
+# Run full test suite (build + 9 NA bird audio tests)
+make test
+
+# Run tests natively (requires venv)
+make test-native
+```
+
+All test audio is committed to the repo — no downloads needed.
+
+## Changes with BirdNET V2.4
+
+This plugin was rewritten from the original [BirdNET Lite Plugin](https://github.com/dariodematties/BirdNET_Lite_Plugin) (v0.2.5). Key changes:
+
+### Model
+
+| | BirdNET Lite (old) | BirdNET V2.4 (new) |
+|---|---|---|
+| Species | ~6,000 birds | 6,522 (birds + frogs + insects) |
+| Architecture | Custom CNN, 27M params | EfficientNetB0-like, 77 MB TFLite |
+| Model in git | Yes (55 MB committed) | No — auto-downloaded by library, baked into Docker |
+| Installation | Manual TFLite model loading | `pip install birdnet` (model auto-downloads) |
+| Geo-filtering | Manual metadata file conversion | Built-in eBird geo model (`--lat`/`--lon`/`--week`) |
+| Bandpass filter | Not available | `--bandpass-fmin`/`--bandpass-fmax` for frequency-limited sources |
+| Batch processing | Not available | `--batch-size` for parallel chunk inference |
+
+### Audio Sources
+
+| | Old | New |
+|---|---|---|
+| USB microphone | `arecord -D hw:0,0` (hard-coded) | pywaggle `Microphone` class (default audio device) |
+| Network camera | Not supported | `--camera URL` (Mobotix MxPEG, RTSP, any ffmpeg source) |
+| Audio file | `--i path` | `--input path` |
+
+### Command-Line Arguments
+
+| Old (analyze.py) | New (app.py) | Notes |
+|---|---|---|
+| `--i` | `--input`, `-i` | Renamed for clarity |
+| `--o` | `--output`, `-o` | Renamed for clarity |
+| `--num_rec` | `--num-recordings` | Same behavior: run N cycles then exit. 0 = loop forever (new). |
+| `--sound_int` | `--duration` | Recording duration per cycle |
+| `--silence_int` | `--interval` | Gap between recording cycles |
+| `--min_conf` | `--min-confidence` | Same behavior |
+| `--sensitivity` | `--sensitivity` | Unchanged |
+| `--overlap` | `--overlap` | Unchanged |
+| `--lat` | `--lat` | Unchanged |
+| `--lon` | `--lon` | Unchanged |
+| `--week` | `--week` | Unchanged |
+| `--custom_list` | (removed) | Replaced by geo model: `--lat`/`--lon`/`--week` + `--sf-thresh` |
+| `--filetype` | (removed) | Auto-detected |
+| `--keep` | (removed) | Temp files always cleaned up |
+| — | `--camera` | **New:** network camera audio capture |
+| — | `--dry-run` | **New:** test without Waggle |
+| — | `--sample-rate` | **New:** configurable sample rate |
+| — | `--top-k` | **New:** max predictions per chunk |
+| — | `--sf-thresh` | **New:** geo model species filter threshold |
+| — | `--bandpass-fmin` | **New:** low-frequency filter cutoff |
+| — | `--bandpass-fmax` | **New:** high-frequency filter cutoff |
+| — | `--batch-size` | **New:** parallel chunk processing |
+| — | `--num-recordings 0` | **New:** loop forever mode |
+
+### Infrastructure
+
+- **Docker base image:** `nvcr.io/nvidia/l4t-tensorflow:r32.4.4` → `python:3.12-slim` (no GPU needed)
+- **Test suite:** 9 North American bird audio tests with PASS/FAIL validation and 5% confidence tolerance
+- **Test audio:** committed to git (no runtime downloads)
+- **Image size:** ~3 GB (TensorFlow overhead, CPU-only inference)
+
+## References
+
+[1] Stefan Kahl, Connor M. Wood, Maximilian Eibl and Holger Klinck. BirdNET: A deep learning solution for avian diversity monitoring. Ecological Informatics Volume 61, March 2021.
+
+## Credits
+
+- Original [BirdNET](https://github.com/birdnet-team/birdnet) by Stefan Kahl, Shyam Madhusudhana, and Holger Klinck (Cornell Lab of Ornithology)
+- Original [Sage plugin](https://github.com/dariodematties/BirdNET_Lite_Plugin) by Dario Dematties
+- Image credit: Becky Matsubara, © 2017
 
 [cc-by-nc-sa]: http://creativecommons.org/licenses/by-nc-sa/4.0/
 [cc-by-nc-sa-shield]: https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg
-
-## Usage
-
-Please, reffer to the [pywaggle](https://github.com/waggle-sensor/pywaggle) and [BirdNET-Lite](https://github.com/kahst/BirdNET-Lite) repositories to instal the necessary dependences.
-
-For usage just clone this repository
-
-`https://github.com/dariodematties/BirdNET_Lite_Plugin`
-
-Then
-
-`cd BirdNET_Lite_Plugin`
-
-and run
-
-`python3 analyze.py --num_rec 6 --sound_int 5`
-
-which will record 6 audio files of 10 seconds each, analyze them, publish the results and inference times of each file and finally remove the recorded input files.
-
-```
-LOADING TF LITE MODEL... DONE!
-IN THIS RUN  6  FILES OF  5.0  SECONDS WILL BE PROCESSED
-RECORDING NUMBER:  0
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-RECORDING NUMBER:  1
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-RECORDING NUMBER:  2
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-RECORDING NUMBER:  3
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-RECORDING NUMBER:  4
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-RECORDING NUMBER:  5
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-FILES IN DATASET: 6
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-ANALYZING AUDIO... DONE! Time 0.3 SECONDS
-ANALYZING AUDIO... DONE! Time 0.2 SECONDS
-ANALYZING AUDIO... DONE! Time 0.2 SECONDS
-ANALYZING AUDIO... DONE! Time 0.2 SECONDS
-ANALYZING AUDIO... DONE! Time 0.2 SECONDS
-ANALYZING AUDIO... DONE! Time 0.2 SECONDS
-PUBLISHING DETECTION 0 ... DONE!
-PUBLISHING DETECTION 1 ... DONE!
-PUBLISHING DETECTION 2 ... DONE!
-PUBLISHING DETECTION 3 ... DONE!
-PUBLISHING DETECTION 4 ... DONE!
-PUBLISHING DETECTION 5 ... DONE!
-REMOVING THE INPUT COLLECTED BY THE MICROPHONE ... DONE!
-```
-
-Beyond publishing, if you want to save the outputs of the model in files, first create a folder in the directory of the project; let's say
-
-`mkdir output`
-
-Then, run the following command
-
-`python3 analyze.py --num_rec 6 --sound_int 5 --o output --min_conf 0.01`
-
-This will instruct the script to save the results of the analysis of the different recordings in the directory `output`
-
-The format of the output is 
-```
-tart (s);End (s);Scientific name;Common name;Confidence
-0.0;3.0;Dicrurus paradiseus;Greater Racket-tailed Drongo;0.025848534
-0.0;3.0;Capito wallacei;Scarlet-banded Barbet;0.019484155
-0.0;3.0;Dendrocopos leucotos;White-backed Woodpecker;0.013595802
-0.0;3.0;Myophonus horsfieldii;Malabar Whistling-Thrush;0.012276235
-0.0;3.0;Grallaria flavotincta;Yellow-breasted Antpitta;0.01151198
-0.0;3.0;Formicarius rufipectus;Rufous-breasted Antthrush;0.011332592
-3.0;6.0;Capito wallacei;Scarlet-banded Barbet;0.058079723
-3.0;6.0;Saltator grossus;Slate-colored Grosbeak;0.03138132
-3.0;6.0;Sylvia abyssinica;African Hill Babbler;0.023456778
-3.0;6.0;Copsychus luzoniensis;White-browed Shama;0.02323199
-3.0;6.0;Hypsipetes everetti;Yellowish Bulbul;0.022299841
-3.0;6.0;Sylvia atriceps;Rwenzori Hill Babbler;0.016690737
-3.0;6.0;Copsychus malabaricus;White-rumped Shama;0.016142305
-3.0;6.0;Saltator fuliginosus;Black-throated Grosbeak;0.0121659925
-```
-
-

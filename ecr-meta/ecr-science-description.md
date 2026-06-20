@@ -17,164 +17,98 @@ In  such a figure we can see the migratory species occurrence correlation (r) be
 
 # AI@Edge
 
-We are using a DNN, called **BirdNET**, which is designed to bird sound recognition of more than 6,000 species worldwide.. The model architecture is derived from the family of residual networks (ResNets), consists of 157 layers with more than 27 million parameters, and was trained using extensive data pre-processing, augmentation, and mixup [1].
+This plugin uses **BirdNET V2.4**, a deep neural network designed for bird sound recognition of 6,522 species worldwide (birds, frogs, and insects). The model uses an EfficientNetB0-like architecture with dual mel-spectrograms (0–3 kHz and 500 Hz–15 kHz) analyzing 3-second audio chunks at 48 kHz. It includes a built-in eBird geo model for location-aware species filtering — when provided with latitude, longitude, and week of year, the model restricts predictions to species expected at that location and time.
 
+Audio can be captured from three sources: a USB microphone connected directly to the node, a network-attached camera (Mobotix MxPEG, RTSP, or any ffmpeg-compatible source), or local audio files for batch processing.
 
 # Using the code
 
-Please, reffer to the [pywaggle](https://github.com/waggle-sensor/pywaggle) and [BirdNET-Lite](https://github.com/kahst/BirdNET-Lite) repositories to instal the necessary dependences.
+```bash
+# Record 15 seconds from USB mic, classify, print results
+python3 app.py --duration 15 --dry-run
 
-For usage just clone this repository
+# Classify an audio file
+python3 app.py --input recording.wav --dry-run
 
-`https://github.com/dariodematties/BirdNET_Lite_Plugin`
+# Capture from a Mobotix M16 camera
+python3 app.py --camera "http://admin:pass@CAMERA_IP/control/faststream.jpg?stream=MxPEG&needlength" \
+               --duration 15 --dry-run
 
-Then
+# With eBird geo-filtering (Chicago, late June)
+python3 app.py --duration 15 --lat 41.88 --lon -87.62 --week 25 --dry-run
 
-`cd BirdNET_Lite_Plugin`
+# 6 recordings of 10 seconds each, 5-second gap between them
+python3 app.py --num-recordings 6 --duration 10 --interval 5 --dry-run
 
-and run
-
-`python3 analyze.py --num_rec 6 --sound_int 5`
-
-which will record 6 audio files of 10 seconds each, analyze them, publish the results and inference times of each file and finally remove the recorded input files.
-
+# Continuous monitoring, 60-second recordings every 5 minutes
+python3 app.py --num-recordings 0 --duration 60 --interval 300
 ```
-LOADING TF LITE MODEL... DONE!
-IN THIS RUN  6  FILES OF  5.0  SECONDS WILL BE PROCESSED
-RECORDING NUMBER:  0
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-RECORDING NUMBER:  1
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-RECORDING NUMBER:  2
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-RECORDING NUMBER:  3
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-RECORDING NUMBER:  4
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-RECORDING NUMBER:  5
-RECORDING AUDIO FROM MIC DURING:  5.0  SECONDS...  DONE!
-FILES IN DATASET: 6
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-READING AUDIO DATA... DONE! READ 2 CHUNKS.
-ANALYZING AUDIO... DONE! Time 0.3 SECONDS
-ANALYZING AUDIO... DONE! Time 0.2 SECONDS
-ANALYZING AUDIO... DONE! Time 0.2 SECONDS
-ANALYZING AUDIO... DONE! Time 0.2 SECONDS
-ANALYZING AUDIO... DONE! Time 0.2 SECONDS
-ANALYZING AUDIO... DONE! Time 0.2 SECONDS
-PUBLISHING DETECTION 0 ... DONE!
-PUBLISHING DETECTION 1 ... DONE!
-PUBLISHING DETECTION 2 ... DONE!
-PUBLISHING DETECTION 3 ... DONE!
-PUBLISHING DETECTION 4 ... DONE!
-PUBLISHING DETECTION 5 ... DONE!
-REMOVING THE INPUT COLLECTED BY THE MICROPHONE ... DONE!
-```
-
-Beyond publishing, if you want to save the outputs of the model in files, first create a folder in the directory of the project; let's say
-
-`mkdir output`
-
-Then, run the following command
-
-`python3 analyze.py --num_rec 6 --sound_int 5 --o output --min_conf 0.01`
-
-This will instruct the script to save the results of the analysis of the different recordings in the directory `output`
-
-The format of the output is 
-```
-tart (s);End (s);Scientific name;Common name;Confidence
-0.0;3.0;Dicrurus paradiseus;Greater Racket-tailed Drongo;0.025848534
-0.0;3.0;Capito wallacei;Scarlet-banded Barbet;0.019484155
-0.0;3.0;Dendrocopos leucotos;White-backed Woodpecker;0.013595802
-0.0;3.0;Myophonus horsfieldii;Malabar Whistling-Thrush;0.012276235
-0.0;3.0;Grallaria flavotincta;Yellow-breasted Antpitta;0.01151198
-0.0;3.0;Formicarius rufipectus;Rufous-breasted Antthrush;0.011332592
-3.0;6.0;Capito wallacei;Scarlet-banded Barbet;0.058079723
-3.0;6.0;Saltator grossus;Slate-colored Grosbeak;0.03138132
-3.0;6.0;Sylvia abyssinica;African Hill Babbler;0.023456778
-3.0;6.0;Copsychus luzoniensis;White-browed Shama;0.02323199
-3.0;6.0;Hypsipetes everetti;Yellowish Bulbul;0.022299841
-3.0;6.0;Sylvia atriceps;Rwenzori Hill Babbler;0.016690737
-3.0;6.0;Copsychus malabaricus;White-rumped Shama;0.016142305
-3.0;6.0;Saltator fuliginosus;Black-throated Grosbeak;0.0121659925
-```
-
 
 # Arguments
 
-This plugin has the following knobs
+### Audio Input
 
-   **--num_rec**      'Number of microphone recordings. Each mic recording will be saved in a different file. Default to 1.'
-    
-   **--silence_int**  'Time interval [s] in which there is not sound recording. Default to 1.0.'
-    
-   **--sound_int**    'Time interval [s] in which there is sound recording. Default to 10.0.'
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--input`, `-i` | None | Path to audio file. If not set, records from mic or camera. |
+| `--camera` | None | URL for network camera audio (Mobotix MxPEG, RTSP, etc.) |
+| `--duration` | 15.0 | Recording duration in seconds (mic or camera mode) |
+| `--sample-rate` | 48000 | Audio sample rate in Hz |
 
-   **--i**			      'Path to input file or directory. If not specified, the plugin will record from the microphone.
-   
-   **--o**			      'Path to output directory. If not specified, the the plugin will not save the output on files (just publish them by means of pywaggle).'
-   
-   **--lat**		      'Recording location latitude. It is a float. Set -1 to ignore (which is set by default).
-   
-   **--lon**		      'Recording location longitude. It is a float. Set -1 to ignore (which is set by default).
-   
-   **--week**		      'Week of the year when the recordings were made. It is an int. Values in [1, 48]. Set -1 to ignore (which is set by default).'
-   
-   **--overlap**		  'Overlap in seconds between extracted spectrograms. It is a float. Values in [0.0, 2.9]. Default is 0.0.'
-   
-   **--sensitivity**	'Sigmoid sensitivity; Higher values result in lower sensitivity. It is a float. Values in [0.25, 2.0]. Defaults to 1.0.'
-   
-   **--min_conf**     'Minimum confidence threshold. Values in [0.01, 0.99]. It is a float. Defaults to 0.1.'
+### Model Parameters
 
-   **--custom_list**  'Path to text file containing a list of species. Not used if not provided.
-   
-   **--keep**         'Keeps all the input files collected from the mic. Default is false'
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--min-confidence` | 0.25 | Minimum confidence threshold (0.01–0.99) |
+| `--sensitivity` | 1.0 | Detection sensitivity (0.5–1.5). Higher = more detections. |
+| `--overlap` | 0.0 | Overlap in seconds between 3-second windows (0.0–2.9) |
+| `--top-k` | 5 | Max predictions per 3-second chunk |
+| `--bandpass-fmin` | 0 | Low-frequency cutoff in Hz |
+| `--bandpass-fmax` | 15000 | High-frequency cutoff in Hz. Match to audio source. |
+| `--batch-size` | 1 | Chunks to process in parallel |
+
+### Location Filtering (eBird)
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--lat` | -1 | Latitude for species range filtering. -1 to disable. |
+| `--lon` | -1 | Longitude for species range filtering. -1 to disable. |
+| `--week` | -1 | Week of year (1–48) for seasonal filtering. -1 for year-round. |
+| `--sf-thresh` | 0.03 | Species filter threshold for geo model |
+
+### Runtime
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--num-recordings` | 1 | Number of recording cycles. 0 = loop forever. |
+| `--interval` | 0.0 | Seconds between recording cycles |
+| `--output`, `-o` | None | Path to save CSV results |
+| `--dry-run` | false | Run without publishing to Waggle |
 
 # Ontology
 
-The Output of the plugin is a text file
+Detections are published to Waggle as:
 
-  * **Begin Time (s):** Time mark to which the detection begins. (env.detection.avian.{start\_time})
+- **`env.detection.audio.<scientific_name>`** — confidence (0–1) per species per detection window
+- **`env.detection.audio.summary`** — JSON summary per cycle with unique species and top confidences
 
-  * **End Time (s):** Time mark to which the detection ends. (env.detection.avian.{end\_time})
+# Inference from Sage
 
-  * **Scientific Name:** Name given to the species by scientists. (env.detection.avian.{scientific\_name})
-
-  * **Common Name:** Colloquial name given to the species. (env.detection.avian.{common\_name})
-
-  * **Confidence:** Classification confidence level (from 0.0 to 1.0).
-
-The outputs of the plugin will be published by
-
-# Inference from Sage codes
-
-To query the output from the plugin, you can do with python library 'sage\_data\_client':
-
-```
+```python
 import sage_data_client
 
-# query and load data into pandas data frame
 df = sage_data_client.query(
     start="-1h",
     filter={
-        "name": "env.detection.avian.{common_name}",
+        "name": "env.detection.audio.*",
     }
 )
-
-# print results in data frame
 print(df)
 ```
 
 # References
 
-
 [1] Stefan Kahl, Connor M. Wood, Maximilian Eibl and Holger Klinck. BirdNET: A deep learning solution for avian diversity monitoring. Ecological Informatics Volume 61, March 2021.
-
 
 # Credits
 
@@ -182,7 +116,64 @@ print(df)
   * Creator: Becky Matsubara 
   * Copyright: © 2017, Becky Matsubara
 
-- Original [BirdNET](https://github.com/kahst/BirdNET-Lite) network by
-  * Stefan Kahl
-  * Shyam Madhusudhana
-  * Holger Klinck
+- Original [BirdNET](https://github.com/birdnet-team/birdnet) network by Stefan Kahl, Shyam Madhusudhana, and Holger Klinck
+- Original [Sage plugin](https://github.com/dariodematties/BirdNET_Lite_Plugin) by Dario Dematties
+
+# Changes with BirdNET V2.4
+
+This plugin was rewritten from the original BirdNET Lite Plugin (v0.2.5) to use BirdNET V2.4.
+
+## Model Changes
+
+| | BirdNET Lite (old) | BirdNET V2.4 (new) |
+|---|---|---|
+| Species coverage | ~6,000 birds only | 6,522 (birds + frogs + insects) |
+| Architecture | Custom CNN, 27M params, manual TFLite | EfficientNetB0-like, 77 MB TFLite FP32 |
+| Model storage | 55 MB file committed to git | Auto-downloaded by library, baked into Docker at build time |
+| Installation | Manual model file + tflite_runtime | `pip install birdnet` |
+| Geo-filtering | Manual metadata file + `--custom_list` | Built-in eBird geo model (`--lat`/`--lon`/`--week`) |
+| Bandpass filter | Not available | `--bandpass-fmin`/`--bandpass-fmax` |
+| Batch processing | Not available | `--batch-size` for parallel inference |
+
+## Audio Source Changes
+
+| | Old | New |
+|---|---|---|
+| USB microphone | `arecord -D hw:0,0` (hard-coded device) | pywaggle `Microphone` class (default audio device) |
+| Network camera | Not supported | `--camera URL` (Mobotix MxPEG, RTSP, any ffmpeg source) |
+| Audio file | `--i path` | `--input path` |
+
+## Command-Line Argument Changes
+
+| Old (analyze.py) | New (app.py) | Notes |
+|---|---|---|
+| `--i` | `--input`, `-i` | Renamed |
+| `--o` | `--output`, `-o` | Renamed |
+| `--num_rec` | `--num-recordings` | Same behavior. 0 = loop forever (new). |
+| `--sound_int` | `--duration` | Recording duration per cycle |
+| `--silence_int` | `--interval` | Gap between recording cycles |
+| `--min_conf` | `--min-confidence` | Same behavior |
+| `--sensitivity` | `--sensitivity` | Unchanged |
+| `--overlap` | `--overlap` | Unchanged |
+| `--lat` | `--lat` | Unchanged |
+| `--lon` | `--lon` | Unchanged |
+| `--week` | `--week` | Unchanged |
+| `--custom_list` | *(removed)* | Replaced by geo model: `--lat`/`--lon`/`--week` + `--sf-thresh` |
+| `--filetype` | *(removed)* | Auto-detected |
+| `--keep` | *(removed)* | Temp files always cleaned up |
+| — | `--camera` | **New:** network camera audio capture |
+| — | `--dry-run` | **New:** test without Waggle |
+| — | `--sample-rate` | **New:** configurable sample rate |
+| — | `--top-k` | **New:** max predictions per chunk |
+| — | `--sf-thresh` | **New:** geo model species filter threshold |
+| — | `--bandpass-fmin` | **New:** low-frequency filter cutoff |
+| — | `--bandpass-fmax` | **New:** high-frequency filter cutoff |
+| — | `--batch-size` | **New:** parallel chunk processing |
+| — | `--num-recordings 0` | **New:** loop forever mode |
+
+## Infrastructure Changes
+
+- **Docker base image:** `nvcr.io/nvidia/l4t-tensorflow:r32.4.4` → `python:3.12-slim` (no GPU needed — CPU TFLite inference)
+- **Waggle topics:** `env.detection.avian.*` → `env.detection.audio.*` (broader scope: birds + frogs + insects)
+- **Test suite:** 9 North American bird audio tests with species validation and 5% confidence tolerance
+- **Test audio:** committed to git — no runtime downloads, fully self-contained
