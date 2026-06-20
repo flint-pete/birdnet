@@ -248,6 +248,17 @@ def publish_detections(plugin, detections: list[dict], timestamp: int):
         )
 
 
+# ── utilities ───────────────────────────────────────────────────────
+def current_birdnet_week() -> int:
+    """Calculate the current BirdNET week (1–48, 4 weeks per month)."""
+    now = datetime.now()
+    # BirdNET uses 4 weeks per month: week = (month - 1) * 4 + ceil(day / 7.5)
+    # This maps Jan 1 = week 1, Dec 31 = week 48
+    import math
+    week = (now.month - 1) * 4 + min(4, math.ceil(now.day / 7.5))
+    return max(1, min(48, week))
+
+
 # ── CLI ─────────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -318,8 +329,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Longitude for species range filtering. -1 to disable.",
     )
     loc.add_argument(
-        "--week", type=int, default=-1,
-        help="Week of year (1–48) for seasonal filtering. -1 for year-round.",
+        "--week", type=str, default="auto",
+        help="Week of year (1–48) for seasonal filtering. "
+             "'auto' (default) = calculate from current date. -1 for year-round.",
     )
     loc.add_argument(
         "--sf-thresh", type=float, default=0.03,
@@ -380,6 +392,13 @@ def main():
     args.sensitivity = max(0.5, min(args.sensitivity, 1.5))
     args.overlap = max(0.0, min(args.overlap, 2.9))
 
+    # Resolve --week: "auto" → current week, or parse as int
+    if args.week.lower() == "auto":
+        args.week = current_birdnet_week()
+        logger.info("Auto-detected BirdNET week: %d", args.week)
+    else:
+        args.week = int(args.week)
+
     logger.info("BirdNET Species Classifier starting")
     logger.info(
         "  min_confidence=%.2f  sensitivity=%.1f  overlap=%.1f  top_k=%d",
@@ -393,8 +412,8 @@ def main():
     else:
         logger.info("  source=microphone (USB)")
     if args.lat > -1 and args.lon > -1:
-        logger.info("  location=(%.4f, %.4f)  week=%s", args.lat, args.lon,
-                     args.week if args.week > 0 else "all")
+        logger.info("  location=(%.4f, %.4f)  week=%d", args.lat, args.lon,
+                     args.week if args.week > 0 else -1)
 
     # Initialize classifier
     classifier = BirdNETClassifier(

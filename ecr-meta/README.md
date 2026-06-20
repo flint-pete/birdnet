@@ -51,7 +51,7 @@ python3 app.py --num-recordings 0 --duration 60 --interval 300
 |----------|---------|-------------|
 | `--lat` | -1 | Latitude (-1 to disable) |
 | `--lon` | -1 | Longitude (-1 to disable) |
-| `--week` | -1 | Week of year, 1–48 (-1 for year-round) |
+| `--week` | auto | Week of year, 1–48. 'auto' = current week. -1 for year-round. |
 | `--sf-thresh` | 0.03 | Geo model species filter threshold |
 
 ### Runtime
