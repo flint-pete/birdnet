@@ -1,5 +1,5 @@
 IMAGE   := birdnet-species
-VERSION := 0.1.0
+VERSION := 0.1.1
 TAG     := $(IMAGE):$(VERSION)
 
 .PHONY: help build test test-docker test-native audio clean

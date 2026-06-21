@@ -91,7 +91,7 @@ python3 app.py --num-recordings 0 --duration 60 --interval 300
 Detections are published to Waggle as:
 
 - **`env.detection.audio.<scientific_name>`** — confidence (0–1) per species per detection window, with metadata: `common_name`, `start_time_s`, `end_time_s`
-- **`env.detection.audio.summary`** — JSON summary per cycle: total detections, unique species, top species with confidences
+- **`env.detection.audio.summary`** — JSON summary published **every cycle** (heartbeat): `total_detections`, `unique_species`, and top species with confidences. On a quiet cycle this is still published with `total_detections: 0` and an empty `species` list, so the data API carries proof the job ran even when no birds are detected.
 
 ## Querying Results
 

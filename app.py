@@ -208,7 +208,13 @@ def record_from_camera(url: str, duration_s: float, sample_rate: int = 48000) ->
 
 # ── publishing ──────────────────────────────────────────────────────
 def publish_detections(plugin, detections: list[dict], timestamp: int):
-    """Publish detections to Waggle."""
+    """Publish detections to Waggle.
+
+    Per-species topics are published only when a detection is present, but the
+    summary topic is ALWAYS published — even with zero detections — so the data
+    API carries a per-cycle heartbeat that proves the job ran. This lets us
+    distinguish "running fine, no birds" from "job is dead" via the data API.
+    """
     for det in detections:
         topic_name = det["scientific_name"].lower().replace(" ", "_")
         plugin.publish(
@@ -222,30 +228,32 @@ def publish_detections(plugin, detections: list[dict], timestamp: int):
             },
         )
 
-    if detections:
-        species_best = {}
-        for det in detections:
-            key = det["scientific_name"]
-            if key not in species_best or det["confidence"] > species_best[key]["confidence"]:
-                species_best[key] = det
+    # Always publish a summary (heartbeat). The per-species loop above already
+    # does nothing when `detections` is empty, so total_detections == 0 is the
+    # quiet-cycle signal.
+    species_best = {}
+    for det in detections:
+        key = det["scientific_name"]
+        if key not in species_best or det["confidence"] > species_best[key]["confidence"]:
+            species_best[key] = det
 
-        summary = {
-            "total_detections": len(detections),
-            "unique_species": len(species_best),
-            "species": [
-                {
-                    "scientific_name": d["scientific_name"],
-                    "common_name": d["common_name"],
-                    "confidence": round(d["confidence"], 4),
-                }
-                for d in sorted(species_best.values(), key=lambda x: x["confidence"], reverse=True)
-            ],
-        }
-        plugin.publish(
-            "env.detection.audio.summary",
-            json.dumps(summary),
-            timestamp=timestamp,
-        )
+    summary = {
+        "total_detections": len(detections),
+        "unique_species": len(species_best),
+        "species": [
+            {
+                "scientific_name": d["scientific_name"],
+                "common_name": d["common_name"],
+                "confidence": round(d["confidence"], 4),
+            }
+            for d in sorted(species_best.values(), key=lambda x: x["confidence"], reverse=True)
+        ],
+    }
+    plugin.publish(
+        "env.detection.audio.summary",
+        json.dumps(summary),
+        timestamp=timestamp,
+    )
 
 
 # ── utilities ───────────────────────────────────────────────────────

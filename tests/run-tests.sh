@@ -33,9 +33,9 @@ if [ ! -d "$AUDIO_DIR" ] || [ -z "$(ls "$AUDIO_DIR"/*.wav "$AUDIO_DIR"/*.mp3 2>/
 fi
 
 if $USE_DOCKER; then
-    if ! docker image inspect birdnet-species:0.1.0 >/dev/null 2>&1; then
-        echo "ERROR: Docker image birdnet-species:0.1.0 not found"
-        echo "Run: docker build -t birdnet-species:0.1.0 ."
+    if ! docker image inspect birdnet-species:0.1.1 >/dev/null 2>&1; then
+        echo "ERROR: Docker image birdnet-species:0.1.1 not found"
+        echo "Run: docker build -t birdnet-species:0.1.1 ."
         exit 1
     fi
 fi
@@ -65,7 +65,7 @@ echo "=========================================================="
 echo " BirdNET Plugin Test Suite"
 echo " Tolerance: ±${TOLERANCE} (5%)"
 if $USE_DOCKER; then
-    echo " Mode: Docker (birdnet-species:0.1.0)"
+    echo " Mode: Docker (birdnet-species:0.1.1)"
 else
     echo " Mode: Native (Python venv)"
 fi
@@ -96,7 +96,7 @@ for entry in "${EXPECTED[@]}"; do
         CSV_NAME="__test_result_$$.csv"
         docker run --rm \
             -v "$AUDIO_DIR:/data" \
-            birdnet-species:0.1.0 \
+            birdnet-species:0.1.1 \
             --input "/data/$file" --dry-run \
             --min-confidence 0.10 --output "/data/$CSV_NAME" >/dev/null 2>&1
         cp "$AUDIO_DIR/$CSV_NAME" "$CSV_TMP" 2>/dev/null || true

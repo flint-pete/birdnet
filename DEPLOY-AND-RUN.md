@@ -13,10 +13,10 @@
 3. **ECR image built** — check the ECR portal at
    [portal.sagecontinuum.org/apps](https://portal.sagecontinuum.org/apps)
    and find `birdnet-species`. Copy the registry tag from the "Tags" tab
-   (e.g. `registry.sagecontinuum.org/beckman/birdnet-species:0.1.0`).
+   (e.g. `registry.sagecontinuum.org/beckman/birdnet-species:0.1.1`).
 
    > **Namespace note:** the ECR namespace is `beckman`, not `flint-pete`.
-   > Use `registry.sagecontinuum.org/beckman/birdnet-species:0.1.0`.
+   > Use `registry.sagecontinuum.org/beckman/birdnet-species:0.1.1`.
 
 ## Quick Test (pluginctl, one-shot)
 
@@ -27,7 +27,7 @@ before scheduling. No sesctl token needed.
 
 ```bash
 sudo pluginctl deploy -n birdnet-test \
-  registry.sagecontinuum.org/beckman/birdnet-species:0.1.0 -- \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 -- \
   --duration 30 --min-confidence 0.60
 
 # Check logs:
@@ -52,7 +52,7 @@ sudo pluginctl rm birdnet-test
 sudo pluginctl rm birdnet-test   # remove any prior pod first (see note below)
 
 sudo pluginctl deploy -n birdnet-test \
-  registry.sagecontinuum.org/beckman/birdnet-species:0.1.0 -- \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 -- \
   --camera 'http://CAMERA_IP:PORT/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=USER&password=PASS' \
   --duration 30 --min-confidence 0.60 --bandpass-fmax 8000
 
@@ -68,7 +68,7 @@ Confirmed-working example for the H00F hummingcam (Reolink RLC-811A at
 
 ```bash
 sudo pluginctl deploy -n birdnet-test \
-  registry.sagecontinuum.org/beckman/birdnet-species:0.1.0 -- \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 -- \
   --camera 'http://10.107.0.221:10000/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=sage&password=SageCam!' \
   --duration 30 --min-confidence 0.60 --bandpass-fmax 8000
 ```
@@ -87,7 +87,7 @@ sudo pluginctl deploy -n birdnet-test \
 
 ```bash
 sudo pluginctl deploy -n birdnet-m16-test \
-  registry.sagecontinuum.org/beckman/birdnet-species:0.1.0 -- \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 -- \
   --camera 'http://USER:PASS@CAMERA_IP/control/faststream.jpg?stream=MxPEG&needlength' \
   --duration 30 --min-confidence 0.60 --bandpass-fmax 4000
 
@@ -222,8 +222,8 @@ Only the `--camera` URL is node-specific.
 reimport:
 ```bash
 cd ~/AI-projects/birdnet && git pull
-sudo docker build -t birdnet-species:0.1.0 .
-sudo docker save birdnet-species:0.1.0 | sudo k3s ctr images import -
+sudo docker build -t birdnet-species:0.1.1 .
+sudo docker save birdnet-species:0.1.1 | sudo k3s ctr images import -
 ```
 
 **ffmpeg "End of file" / exit 187 (Reolink)** — Wrong auth method.

@@ -3,7 +3,7 @@
 ## Quick Build
 
 ```bash
-docker build -t birdnet-species:0.1.0 .
+docker build -t birdnet-species:0.1.1 .
 ```
 
 Build takes ~5-10 minutes. The Dockerfile:
@@ -23,13 +23,13 @@ Expect ~2-3 GB due to TensorFlow (pulled in by birdnet).
 # Dry-run with a test audio file
 docker run --rm \
   -v $(pwd)/tests/audio:/data \
-  birdnet-species:0.1.0 \
+  birdnet-species:0.1.1 \
   --input /data/search_sample.mp3 --dry-run
 
 # With geo-filtering (Chicago)
 docker run --rm \
   -v $(pwd)/tests/audio:/data \
-  birdnet-species:0.1.0 \
+  birdnet-species:0.1.1 \
   --input /data/soundscape.wav --dry-run \
   --lat 41.88 --lon -87.62 --week 22
 ```

@@ -4,7 +4,7 @@
 
 - Docker installed (`docker --version`)
 - Test audio files downloaded (`python3 tests/download_test_audio.py`)
-- Image built (`docker build -t birdnet-species:0.1.0 .`)
+- Image built (`docker build -t birdnet-species:0.1.1 .`)
 
 ## Running Tests
 
@@ -13,7 +13,7 @@
 ```bash
 docker run --rm \
   -v $(pwd)/tests/audio:/data \
-  birdnet-species:0.1.0 \
+  birdnet-species:0.1.1 \
   --input /data/search_sample.mp3 --dry-run
 ```
 
@@ -24,7 +24,7 @@ Expected: Blue Jay detected at 99.7% confidence.
 ```bash
 docker run --rm \
   -v $(pwd)/tests/audio:/data \
-  birdnet-species:0.1.0 \
+  birdnet-species:0.1.1 \
   --input /data/soundscape.wav --dry-run
 ```
 
@@ -36,7 +36,7 @@ House Finch (64%), American Goldfinch (48%).
 ```bash
 docker run --rm \
   -v $(pwd)/tests/audio:/data \
-  birdnet-species:0.1.0 \
+  birdnet-species:0.1.1 \
   --input /data/soundscape.wav --dry-run \
   --lat 41.88 --lon -87.62 --week 22
 ```
@@ -47,13 +47,13 @@ docker run --rm \
 # Barred Owl — expect 99.99%
 docker run --rm \
   -v $(pwd)/tests/audio:/data \
-  birdnet-species:0.1.0 \
+  birdnet-species:0.1.1 \
   --input /data/barred_owl.mp3 --dry-run
 
 # Eastern Bluebird — expect 99.99%
 docker run --rm \
   -v $(pwd)/tests/audio:/data \
-  birdnet-species:0.1.0 \
+  birdnet-species:0.1.1 \
   --input /data/eastern_bluebird.mp3 --dry-run
 ```
 
@@ -62,7 +62,7 @@ docker run --rm \
 ```bash
 docker run --rm \
   -v $(pwd)/tests/audio:/data \
-  birdnet-species:0.1.0 \
+  birdnet-species:0.1.1 \
   --input /data/soundscape.wav --dry-run \
   --output /data/results.csv
 
@@ -77,7 +77,7 @@ for f in tests/audio/*.wav tests/audio/*.mp3; do
   echo "=== $(basename $f) ==="
   docker run --rm \
     -v $(pwd)/tests/audio:/data \
-    birdnet-species:0.1.0 \
+    birdnet-species:0.1.1 \
     --input "/data/$(basename $f)" --dry-run \
     --min-confidence 0.40
   echo ""
@@ -93,7 +93,7 @@ for f in tests/audio/*.wav tests/audio/*.mp3; do
   echo -n "$(basename $f): "
   docker run --rm \
     -v $(pwd)/tests/audio:/data \
-    birdnet-species:0.1.0 \
+    birdnet-species:0.1.1 \
     --input "/data/$(basename $f)" --dry-run 2>&1 \
     | grep "Classified" | sed 's/.*in //' 
 done
@@ -114,12 +114,12 @@ powerful.
 
 ```bash
 # Build and tag for pluginctl
-docker build -t birdnet-species:0.1.0 .
+docker build -t birdnet-species:0.1.1 .
 
 # Deploy with pluginctl (when ready)
 sudo pluginctl deploy \
   --name birdnet-species \
-  birdnet-species:0.1.0 \
+  birdnet-species:0.1.1 \
   -- --duration 15 --lat 41.7 --lon -87.99 --week 25 \
      --min-confidence 0.25 --interval 60
 ```
