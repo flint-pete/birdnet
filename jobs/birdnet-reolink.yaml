@@ -13,11 +13,12 @@
 # Sub-stream is 16 kHz audio -> use --bandpass-fmax 8000 (8 kHz Nyquist).
 # Lat/lon auto-detected from node manifest. Week auto-calculated.
 #
-# Submit: sesctl create --from-file jobs/birdnet-reolink.yaml
-# Check:  sesctl stat birdnet-reolink
-# Start:  sesctl sub birdnet-reolink
-# Stop:   sesctl sus birdnet-reolink
-# Remove: sesctl rm birdnet-reolink
+# Submit (verified sesctl syntax — flags differ from the website docs):
+#   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" create -f jobs/birdnet-reolink.yaml
+#   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" submit -j <numeric-job-id>
+# Check:  sesctl ... stat -j <numeric-job-id>
+# Suspend:sesctl ... rm -s <numeric-job-id>
+# Remove: sesctl ... rm <numeric-job-id>   (must suspend first if Running)
 
 name: birdnet-reolink
 plugins:
