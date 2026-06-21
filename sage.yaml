@@ -11,7 +11,7 @@ funding: "NSF 2436842"
 source:
   architectures:
     - linux/arm64
-    - linux/amd64
+    # - linux/amd64  # disabled: QEMU crashes on NVIDIA base image during cross-build
   url: "https://github.com/flint-pete/birdnet.git"
   branch: "main"
 
