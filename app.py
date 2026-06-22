@@ -221,10 +221,11 @@ def publish_detections(plugin, detections: list[dict], timestamp: int):
             f"env.detection.audio.{topic_name}",
             det["confidence"],
             timestamp=timestamp,
+            # pywaggle requires meta values to be strings — stringify the floats.
             meta={
-                "common_name": det["common_name"],
-                "start_time_s": det["start_time"],
-                "end_time_s": det["end_time"],
+                "common_name": str(det["common_name"]),
+                "start_time_s": str(det["start_time"]),
+                "end_time_s": str(det["end_time"]),
             },
         )
 
