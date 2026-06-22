@@ -78,19 +78,35 @@ python3 app.py --num-recordings 0 --duration 60 --interval 300
 | `--sf-thresh` | 0.03 | Species filter threshold for geo model |
 
 **Dynamic location resolution (v0.1.2+).** When `--lat`/`--lon` are left at
--1, the plugin resolves the node's GPS at runtime by trying these sources in
-order, using the first that succeeds:
+-1, the plugin resolves the node's GPS at runtime by trying these sources,
+using the first that succeeds:
 
-1. **Live pywaggle GPS fix** — best for mobile nodes; usually absent on fixed nodes.
-2. **Node manifest file** — the platform-maintained `node-manifest-v2.json`
+1. **Node manifest file** — the platform-maintained `node-manifest-v2.json`
    (probed at `/etc/waggle/`, `/run/waggle/`, `/host/etc/waggle/`, or the path
    in `$WAGGLE_NODE_MANIFEST`). Reads `gps_lat` / `gps_lon`.
-3. **Waggle env vars** — `WAGGLE_NODE_GPS_LAT` / `WAGGLE_NODE_GPS_LON` if set.
+2. **Waggle env vars** — `WAGGLE_NODE_GPS_LAT` / `WAGGLE_NODE_GPS_LON` if set.
+3. **Live `sys.gps.*` stream** (opt-in via `--gps-subscribe`) — subscribes to
+   the node's `sys.gps.lat` / `sys.gps.lon` measurements. Only useful on
+   GPS-equipped/mobile nodes that run a GPS device plugin; off by default
+   because fixed nodes have no GPS publisher and the subscribe just adds a few
+   seconds of startup.
+
+> **Note on pywaggle:** as of pywaggle 0.56 there is **no** dedicated
+> location/GPS accessor (no `waggle.data.gps`, no `Plugin.get_location()`).
+> The only live-GPS mechanism is the data plane (`sys.gps.*` measurements,
+> hence `--gps-subscribe`). A proper fix belongs upstream: a pywaggle location
+> API plus WES injecting node GPS into the plugin environment.
 
 This keeps job files portable (no hardcoded coordinates). If none of the
 sources are reachable inside the pod, geo-filtering is disabled and the log
 says `No node location available …`; pass `--lat`/`--lon` explicitly to force
 it. Explicit `--lat`/`--lon` always override auto-resolution.
+
+**On Sage today (confirmed on H00F):** SES does **not** mount the node manifest
+into plugin pods and fixed nodes have no `sys.gps.*` publisher, so
+auto-resolution finds nothing — pass `--lat`/`--lon` explicitly (see the
+hummingcam job for the pattern).
+
 
 
 ### Runtime

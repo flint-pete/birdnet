@@ -43,7 +43,7 @@ name: birdnet-reolink
 plugins:
   - name: birdnet-species
     pluginSpec:
-      image: registry.sagecontinuum.org/beckman/birdnet-species:0.1.2
+      image: registry.sagecontinuum.org/beckman/birdnet-species:0.1.3
       args:
         - "--camera"
         # Reolink FLV/BCS URL — credentials as QUERY PARAMS, not basic auth.

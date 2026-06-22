@@ -310,41 +310,69 @@ def _coords_from_env() -> tuple[float, float] | None:
     return None
 
 
-def _coords_from_live_gps() -> tuple[float, float] | None:
-    """Try a live GPS read via pywaggle, if this image's pywaggle exposes it.
+def _coords_from_live_gps(timeout_s: float = 3.0) -> tuple[float, float] | None:
+    """Try a live GPS fix by subscribing to the node's ``sys.gps.*`` stream.
 
-    Mobile nodes publish a live fix; fixed nodes usually don't have the API.
-    Best-effort: any failure (no module, no fix, timeout) returns None and we
-    fall back to the manifest / env / args.
+    NOTE: pywaggle has no dedicated GPS/location accessor (no ``waggle.data.gps``
+    and no ``Plugin.get_location()`` as of pywaggle 0.56). The only live-GPS
+    mechanism today is the data plane: GPS-equipped nodes run a device plugin
+    that publishes ``sys.gps.lat`` / ``sys.gps.lon`` measurements, which other
+    plugins can ``subscribe`` to. Fixed nodes (e.g. H00F) have no such publisher,
+    so this returns None quickly and we fall back to the manifest.
+
+    Best-effort: any failure (no Plugin scope, no publisher, timeout) returns
+    None. This should ideally become a first-class pywaggle feature — see the
+    module docstring / project notes.
     """
     try:
-        from waggle.data.gps import GPS  # type: ignore
+        from waggle.plugin import Plugin
     except Exception:
         return None
+
+    lat = lon = None
     try:
-        with GPS() as gps:
-            fix = gps.get()  # may block briefly; pywaggle handles timeout
-        lat = getattr(fix, "lat", None)
-        lon = getattr(fix, "lon", None)
+        with Plugin() as plugin:
+            plugin.subscribe("sys.gps.lat", "sys.gps.lon")
+            deadline = time.monotonic() + timeout_s
+            while time.monotonic() < deadline and (lat is None or lon is None):
+                remaining = deadline - time.monotonic()
+                try:
+                    msg = plugin.get(timeout=max(0.1, remaining))
+                except Exception:
+                    break  # no message within the window
+                if msg.name == "sys.gps.lat":
+                    lat = float(msg.value)
+                elif msg.name == "sys.gps.lon":
+                    lon = float(msg.value)
         if lat is not None and lon is not None:
-            logger.info("Node location from live pywaggle GPS fix")
-            return float(lat), float(lon)
+            logger.info("Node location from live sys.gps.* stream")
+            return lat, lon
     except Exception as e:
-        logger.debug("Live GPS read unavailable: %s", e)
+        logger.debug("Live GPS subscribe unavailable: %s", e)
     return None
 
 
-def read_node_location() -> tuple[float, float] | None:
+def read_node_location(try_live_gps: bool = False) -> tuple[float, float] | None:
     """Resolve the node's GPS location dynamically, trying sources in order:
 
-      1. Live pywaggle GPS fix      (best for mobile nodes; usually absent on fixed)
+      1. Live ``sys.gps.*`` stream  (only if try_live_gps=True; GPS-equipped/
+                                     mobile nodes; absent on fixed nodes)
       2. Node manifest file          (platform-maintained; canonical on Sage)
-      3. Waggle-injected env vars    (some SES deployments)
+      3. Waggle-injected env vars    (if a deployment sets them)
 
     Returns (lat, lon) or None if no source is available. Explicit --lat/--lon
     on the CLI override this entirely (handled by the caller).
+
+    pywaggle currently exposes none of these as a tidy "get my location" call;
+    this resolver stitches together the mechanisms that DO exist. The proper
+    fix is an upstream pywaggle location accessor + WES injecting node GPS into
+    the plugin environment. Live-GPS is opt-in (try_live_gps) because on a fixed
+    node with no GPS publisher the subscribe just wastes a few seconds.
     """
-    for source in (_coords_from_live_gps, _coords_from_manifest, _coords_from_env):
+    sources = [_coords_from_manifest, _coords_from_env]
+    if try_live_gps:
+        sources.insert(0, _coords_from_live_gps)
+    for source in sources:
         coords = source()
         if coords is not None:
             return coords
@@ -414,11 +442,20 @@ def build_parser() -> argparse.ArgumentParser:
     loc = parser.add_argument_group("location filtering (eBird)")
     loc.add_argument(
         "--lat", type=float, default=-1,
-        help="Latitude for species range filtering. -1 = auto-detect from node manifest.",
+        help="Latitude for species range filtering. -1 = auto-resolve "
+             "(manifest/env; or live sys.gps.* with --gps-subscribe).",
     )
     loc.add_argument(
         "--lon", type=float, default=-1,
-        help="Longitude for species range filtering. -1 = auto-detect from node manifest.",
+        help="Longitude for species range filtering. -1 = auto-resolve "
+             "(manifest/env; or live sys.gps.* with --gps-subscribe).",
+    )
+    loc.add_argument(
+        "--gps-subscribe", action="store_true",
+        help="When auto-resolving location, also try a live GPS fix by "
+             "subscribing to the node's sys.gps.* stream (only useful on "
+             "GPS-equipped/mobile nodes; adds a few seconds of startup and is "
+             "off by default since fixed nodes have no GPS publisher).",
     )
     loc.add_argument(
         "--week", type=str, default="auto",
@@ -491,9 +528,9 @@ def main():
     else:
         args.week = int(args.week)
 
-    # Resolve --lat/--lon: auto-detect from node manifest if not specified
+    # Resolve --lat/--lon: auto-resolve from node location if not specified
     if args.lat == -1 and args.lon == -1:
-        location = read_node_location()
+        location = read_node_location(try_live_gps=args.gps_subscribe)
         if location is not None:
             args.lat, args.lon = location
             logger.info("Auto-detected node location: (%.4f, %.4f)", args.lat, args.lon)
