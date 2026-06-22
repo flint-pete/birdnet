@@ -1,7 +1,28 @@
 # BirdNET Reolink Hummingbird Camera Job — Thor H00F
 # Captures 30s audio from Reolink RLC-811A built-in mic every 10 minutes,
-# classifies with BirdNET V2.4, publishes detections >= 0.60 confidence
+# classifies with BirdNET V2.4, publishes detections >= 0.35 confidence
 # to Beehive with eBird seasonal geo-filtering.
+#
+# CONFIDENCE THRESHOLD: lowered 0.60 -> 0.35. The Reolink mic is faint and the
+#   sub-stream is only 16 kHz, which depresses BirdNET confidence: a clearly
+#   audible House Sparrow scored only ~0.40, so 0.60 filtered out every real
+#   bird (zero detections for days). 0.35 lets genuine local birds through.
+#   (Amplifying the audio does NOT help — BirdNET keys on spectral shape, not
+#   loudness; +20 dB gave identical scores. So gain is not a lever; threshold
+#   and geo-filtering are.)
+#
+# GEO-FILTERING (dynamic): lat/lon are auto-resolved at runtime by the plugin
+#   (v0.1.2+) from, in order: live pywaggle GPS -> node manifest
+#   (/etc/waggle/node-manifest-v2.json and alts) -> Waggle env vars. No coords
+#   are hardcoded here, so this job is portable across nodes. If the manifest
+#   is NOT reachable inside the pod (we are confirming this experimentally),
+#   geo-filtering stays off and you'll see "No node location available" in the
+#   logs — in that case add explicit args to the plugin below:
+#       - "--lat"
+#       - "41.7180"
+#       - "--lon"
+#       - "-87.9827"
+#   (H00F coordinates, from its node manifest.)
 #
 # IMPORTANT — Reolink auth: the BCS/FLV endpoint does NOT accept HTTP basic
 #   auth (http://user:pass@ip/...). Credentials MUST be query parameters
@@ -11,7 +32,7 @@
 #   http://10.107.0.221:10000/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=sage&password=SageCam!
 #
 # Sub-stream is 16 kHz audio -> use --bandpass-fmax 8000 (8 kHz Nyquist).
-# Lat/lon auto-detected from node manifest. Week auto-calculated.
+# Week auto-calculated.
 #
 # Submit (verified sesctl syntax — flags differ from the website docs):
 #   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" create -f jobs/birdnet-reolink.yaml
@@ -24,7 +45,7 @@ name: birdnet-reolink
 plugins:
   - name: birdnet-species
     pluginSpec:
-      image: registry.sagecontinuum.org/beckman/birdnet-species:0.1.1
+      image: registry.sagecontinuum.org/beckman/birdnet-species:0.1.2
       args:
         - "--camera"
         # Reolink FLV/BCS URL — credentials as QUERY PARAMS, not basic auth.
@@ -33,7 +54,7 @@ plugins:
         - "--duration"
         - "30"
         - "--min-confidence"
-        - "0.60"
+        - "0.35"
         - "--bandpass-fmax"
         - "8000"
 nodes:

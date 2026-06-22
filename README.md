@@ -72,10 +72,26 @@ python3 app.py --num-recordings 0 --duration 60 --interval 300
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--lat` | -1 | Latitude for species range filtering. -1 = auto-detect from node manifest. |
-| `--lon` | -1 | Longitude for species range filtering. -1 = auto-detect from node manifest. |
+| `--lat` | -1 | Latitude for species range filtering. -1 = auto-resolve dynamically (see below). |
+| `--lon` | -1 | Longitude for species range filtering. -1 = auto-resolve dynamically (see below). |
 | `--week` | auto | Week of year (1–48) for seasonal filtering. 'auto' = current week. -1 for year-round. |
 | `--sf-thresh` | 0.03 | Species filter threshold for geo model |
+
+**Dynamic location resolution (v0.1.2+).** When `--lat`/`--lon` are left at
+-1, the plugin resolves the node's GPS at runtime by trying these sources in
+order, using the first that succeeds:
+
+1. **Live pywaggle GPS fix** — best for mobile nodes; usually absent on fixed nodes.
+2. **Node manifest file** — the platform-maintained `node-manifest-v2.json`
+   (probed at `/etc/waggle/`, `/run/waggle/`, `/host/etc/waggle/`, or the path
+   in `$WAGGLE_NODE_MANIFEST`). Reads `gps_lat` / `gps_lon`.
+3. **Waggle env vars** — `WAGGLE_NODE_GPS_LAT` / `WAGGLE_NODE_GPS_LON` if set.
+
+This keeps job files portable (no hardcoded coordinates). If none of the
+sources are reachable inside the pod, geo-filtering is disabled and the log
+says `No node location available …`; pass `--lat`/`--lon` explicitly to force
+it. Explicit `--lat`/`--lon` always override auto-resolution.
+
 
 ### Runtime
 

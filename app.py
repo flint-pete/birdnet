@@ -267,20 +267,87 @@ def current_birdnet_week() -> int:
     return max(1, min(48, week))
 
 
-MANIFEST_PATH = "/etc/waggle/node-manifest-v2.json"
+# Node manifest locations to probe, in order. The platform maintains the
+# manifest with the node's current GPS; SES may mount it at the canonical
+# host path, or a job may mount it elsewhere. We try several known spots so
+# geo-filtering "just works" without hardcoding coordinates per node.
+MANIFEST_PATHS = [
+    os.environ.get("WAGGLE_NODE_MANIFEST", ""),   # explicit override (mount target)
+    "/etc/waggle/node-manifest-v2.json",          # canonical host path
+    "/run/waggle/node-manifest-v2.json",          # alt runtime path
+    "/host/etc/waggle/node-manifest-v2.json",     # host rootfs mount convention
+]
+
+
+def _coords_from_manifest() -> tuple[float, float] | None:
+    """Try each known manifest path; return (lat, lon) from the first valid one."""
+    for path in MANIFEST_PATHS:
+        if not path:
+            continue
+        try:
+            with open(path) as f:
+                manifest = json.load(f)
+            lat = manifest.get("gps_lat")
+            lon = manifest.get("gps_lon")
+            if lat is not None and lon is not None:
+                logger.info("Node location from manifest %s", path)
+                return float(lat), float(lon)
+        except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError):
+            continue
+    return None
+
+
+def _coords_from_env() -> tuple[float, float] | None:
+    """Try Waggle-injected GPS env vars (some SES deployments set these)."""
+    lat = os.environ.get("WAGGLE_NODE_GPS_LAT") or os.environ.get("WAGGLE_GPS_LAT")
+    lon = os.environ.get("WAGGLE_NODE_GPS_LON") or os.environ.get("WAGGLE_GPS_LON")
+    if lat and lon:
+        try:
+            logger.info("Node location from Waggle env vars")
+            return float(lat), float(lon)
+        except ValueError:
+            return None
+    return None
+
+
+def _coords_from_live_gps() -> tuple[float, float] | None:
+    """Try a live GPS read via pywaggle, if this image's pywaggle exposes it.
+
+    Mobile nodes publish a live fix; fixed nodes usually don't have the API.
+    Best-effort: any failure (no module, no fix, timeout) returns None and we
+    fall back to the manifest / env / args.
+    """
+    try:
+        from waggle.data.gps import GPS  # type: ignore
+    except Exception:
+        return None
+    try:
+        with GPS() as gps:
+            fix = gps.get()  # may block briefly; pywaggle handles timeout
+        lat = getattr(fix, "lat", None)
+        lon = getattr(fix, "lon", None)
+        if lat is not None and lon is not None:
+            logger.info("Node location from live pywaggle GPS fix")
+            return float(lat), float(lon)
+    except Exception as e:
+        logger.debug("Live GPS read unavailable: %s", e)
+    return None
 
 
 def read_node_location() -> tuple[float, float] | None:
-    """Read lat/lon from the Sage node manifest, if available."""
-    try:
-        with open(MANIFEST_PATH) as f:
-            manifest = json.load(f)
-        lat = manifest.get("gps_lat")
-        lon = manifest.get("gps_lon")
-        if lat is not None and lon is not None:
-            return float(lat), float(lon)
-    except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError):
-        pass
+    """Resolve the node's GPS location dynamically, trying sources in order:
+
+      1. Live pywaggle GPS fix      (best for mobile nodes; usually absent on fixed)
+      2. Node manifest file          (platform-maintained; canonical on Sage)
+      3. Waggle-injected env vars    (some SES deployments)
+
+    Returns (lat, lon) or None if no source is available. Explicit --lat/--lon
+    on the CLI override this entirely (handled by the caller).
+    """
+    for source in (_coords_from_live_gps, _coords_from_manifest, _coords_from_env):
+        coords = source()
+        if coords is not None:
+            return coords
     return None
 
 
@@ -431,7 +498,9 @@ def main():
             args.lat, args.lon = location
             logger.info("Auto-detected node location: (%.4f, %.4f)", args.lat, args.lon)
         else:
-            logger.info("No node manifest found — geo-filtering disabled")
+            logger.info("No node location available (live GPS / manifest / env "
+                        "all absent) — geo-filtering disabled. Pass --lat/--lon "
+                        "to enable it explicitly, or mount the node manifest.")
 
     logger.info("BirdNET Species Classifier starting")
     logger.info(
