@@ -14,15 +14,13 @@
 # GEO-FILTERING (dynamic): lat/lon are auto-resolved at runtime by the plugin
 #   (v0.1.2+) from, in order: live pywaggle GPS -> node manifest
 #   (/etc/waggle/node-manifest-v2.json and alts) -> Waggle env vars. No coords
-#   are hardcoded here, so this job is portable across nodes. If the manifest
-#   is NOT reachable inside the pod (we are confirming this experimentally),
-#   geo-filtering stays off and you'll see "No node location available" in the
-#   logs — in that case add explicit args to the plugin below:
-#       - "--lat"
-#       - "41.7180"
-#       - "--lon"
-#       - "-87.9827"
-#   (H00F coordinates, from its node manifest.)
+#   are hardcoded in the CODE, so the plugin is portable across nodes.
+#   EXPERIMENTALLY CONFIRMED on H00F (2026-06-22): SES does NOT mount the node
+#   manifest into the plugin pod, and this fixed node exposes no live GPS, so
+#   auto-resolution logs "No node location available" and geo-filtering stays
+#   off. We therefore pass H00F's coordinates explicitly via --lat/--lon below
+#   (values from the host manifest). On nodes where the manifest IS reachable
+#   in-pod, you can drop the explicit args and auto-resolution will handle it.
 #
 # IMPORTANT — Reolink auth: the BCS/FLV endpoint does NOT accept HTTP basic
 #   auth (http://user:pass@ip/...). Credentials MUST be query parameters
@@ -57,6 +55,16 @@ plugins:
         - "0.35"
         - "--bandpass-fmax"
         - "8000"
+        # Geo-filtering: SES does NOT mount the node manifest into the pod and
+        # this fixed node exposes no live GPS, so auto-resolution finds nothing
+        # ("No node location available"). We pass H00F's coordinates explicitly
+        # (from /etc/waggle/node-manifest-v2.json: gps_lat/gps_lon) to enable
+        # eBird seasonal geo-filtering. For a different node, update these or
+        # rely on auto-resolution where the manifest IS reachable.
+        - "--lat"
+        - "41.7180"
+        - "--lon"
+        - "-87.9827"
 nodes:
   H00F:
 scienceRules:
