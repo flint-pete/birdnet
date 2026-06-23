@@ -1,6 +1,6 @@
 name: "birdnet-species"
 description: "Records audio, identifies bird/frog/insect species using BirdNET V2.4, publishes detections"
-version: "0.1.5"
+version: "0.1.6"
 namespace: "sage"
 authors: "Pete Beckman <beckman@deepiron.com>"
 collaborators: "Dario Dematties (original avian-diversity-monitoring plugin)"

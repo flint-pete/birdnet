@@ -2,6 +2,20 @@
 
 All notable changes to the `birdnet-species` Sage plugin.
 
+## 0.1.6 — 2026-06-23
+
+### Fixed
+- **Startup crash-loop in 0.1.5** (`NameError: name 'birdnet' is not defined`).
+  When model loading was refactored from `__init__` into the new `load()` method
+  (0.1.5), the `import birdnet` statement was left behind in `__init__`, so
+  `load()` called `birdnet.load(...)` with the name unbound in its scope. The
+  plugin raised on every startup and the scheduler crash-looped it (zero output).
+  Fix: moved `import birdnet` into `load()` where it is used. (0.1.5 is a
+  known-bad published version — do not deploy it; it never ran successfully.)
+  Lesson: when extracting code into a new method, method-local imports must move
+  with the code that uses them; a Pyright "not defined" warning on the lazy
+  import flagged this and should not have been dismissed.
+
 ## 0.1.5 — 2026-06-23
 
 ### Added

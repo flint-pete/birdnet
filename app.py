@@ -60,8 +60,6 @@ class BirdNETClassifier:
         bandpass_fmax: int = 15000,
         batch_size: int = 1,
     ):
-        import birdnet
-
         self.min_confidence = min_confidence
         self.sensitivity = sensitivity
         self.overlap = overlap
@@ -82,6 +80,8 @@ class BirdNETClassifier:
         """Load the acoustic model and (if coordinates are set) build the geo
         species filter. Separated from __init__ so callers can wrap it in
         plugin.timeit('plugin.duration.loadmodel')."""
+        import birdnet
+
         lat, lon, week = self.lat, self.lon, self.week
         # Load acoustic model (auto-downloads on first use)
         logger.info("Loading BirdNET V2.4 acoustic model...")
