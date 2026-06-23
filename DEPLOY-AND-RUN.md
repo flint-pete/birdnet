@@ -132,32 +132,88 @@ export SES_HOST=https://es.sagecontinuum.org
 export SES_USER_TOKEN=<your-token-from-portal>
 ```
 
-### Step 2: Create the job
+### Step 2: Register the version in the ECR catalog (the "import" step)
 
-Edit the job YAML in `jobs/` to set the correct camera URL, then:
+**This is the step most people miss.** SES validates a job's image against the
+ECR app *catalog* (`ecr.sagecontinuum.org`) — **not** the Docker registry and
+**not** the image you sideloaded into k3s. If the catalog has no record for your
+exact version, `sesctl submit` fails with:
 
-```bash
-# Reolink hummingbird cam:
-sesctl create --from-file jobs/birdnet-reolink.yaml
-
-# Or Mobotix M16:
-sesctl create --from-file jobs/birdnet-m16.yaml
+```
+[registry.sagecontinuum.org/<ns>/birdnet-species:<ver> does not exist in ECR]
 ```
 
-### Step 3: Submit (activate) the job
+Normally the ECR **portal** "Create App / add version" UI registers that catalog
+record (and builds the image) for you. But for Thor/arm64 NVIDIA-base plugins the
+portal *build* crashes under QEMU, and we serve the actual image by **sideloading**
+it into the node's k3s containerd instead (SES pods use
+`imagePullPolicy=IfNotPresent`, so a locally-present image is used as-is). All we
+then need from ECR is the catalog *metadata* record. Register it directly via the
+API with the helper script — it clones a known-good prior version's metadata,
+bumps the version + git source, and POSTs to `/api/submit`:
 
 ```bash
-sesctl stat                    # List your jobs
-sesctl sub birdnet-reolink     # Start scheduling
+python3 scripts/register-ecr-version.py \
+  --namespace beckman \
+  --name birdnet-species \
+  --from-version 0.1.3 \
+  --version 0.1.4 \
+  --git-url https://github.com/flint-pete/birdnet.git \
+  --token "$SAGE_TOKEN"
 ```
 
-### Step 4: Monitor
+It prints `registered: beckman/birdnet-species:0.1.4` and lists the catalog
+versions. (Auth uses the `Authorization: Sage <token>` header; the token is your
+portal access token, which has write scope.)
+
+### Step 2b: Build + sideload the image onto the node
+
+The catalog record is metadata only — the image must actually be pullable. On
+Thor we build locally and sideload into k3s (no registry push needed):
 
 ```bash
-sesctl stat birdnet-reolink    # Check job status
+cd ~/AI-projects/birdnet && git pull
+sudo docker build -t registry.sagecontinuum.org/beckman/birdnet-species:0.1.4 .
+sudo docker save registry.sagecontinuum.org/beckman/birdnet-species:0.1.4 \
+  | sudo k3s ctr images import -
+# verify:
+sudo k3s ctr images ls | grep birdnet-species:0.1.4
 ```
 
-### Step 5: Query results from Beehive
+> **Why this works:** SES pods use `imagePullPolicy=IfNotPresent`. Because the
+> tag is already present in containerd, the kubelet uses it directly and never
+> contacts the registry. Tag the image with the **full registry path** so it
+> matches the job YAML's `image:` field exactly.
+
+### Step 3: Create the job
+
+Edit the job YAML in `jobs/` to set the correct camera URL + image tag, then
+create it. Note the actual `sesctl` flags (the portal docs are wrong here):
+
+```bash
+# create takes -f / --file-path and RETURNS a numeric job id:
+sesctl --server "$SES_HOST" --token "$SES_USER_TOKEN" create -f jobs/birdnet-reolink.yaml
+# => {"job_id": "5657", "state": "Created"}
+```
+
+### Step 4: Submit (activate) the job — by numeric ID, not name
+
+```bash
+sesctl --server "$SES_HOST" --token "$SES_USER_TOKEN" stat        # list jobs + ids
+sesctl --server "$SES_HOST" --token "$SES_USER_TOKEN" submit -j 5657   # activate by ID
+```
+
+> **sesctl gotchas:** `create` uses `-f/--file-path` (not `--from-file`).
+> `submit` takes `-j <numeric-job-id>` (not the job *name*). `rm -s <id>`
+> suspends; `rm <id>` removes.
+
+### Step 5: Monitor
+
+```bash
+sesctl --server "$SES_HOST" --token "$SES_USER_TOKEN" stat   # check job status
+```
+
+### Step 6: Query results from Beehive
 
 From any machine with sage-data-client:
 
@@ -187,26 +243,43 @@ curl -s -X POST https://data.sagecontinuum.org/api/v1/query -d '
 }'
 ```
 
-### Step 6: Manage the job
+### Step 7: Manage the job
 
 ```bash
-sesctl sus birdnet-reolink     # Suspend (pause)
-sesctl sub birdnet-reolink     # Resume
-sesctl rm birdnet-reolink      # Remove completely
+sesctl --server "$SES_HOST" --token "$SES_USER_TOKEN" rm -s <job-id>   # Suspend (pause)
+sesctl --server "$SES_HOST" --token "$SES_USER_TOKEN" submit -j <job-id>   # Resume
+sesctl --server "$SES_HOST" --token "$SES_USER_TOKEN" rm <job-id>      # Remove completely
 ```
 
-## Auto-Detection Features
+## Location & Week Resolution
 
-The plugin auto-detects these at runtime — no need to set them
-in the job YAML:
+The plugin resolves week-of-year automatically, and *attempts* to resolve
+location automatically — but **on SES today you must pass `--lat`/`--lon`
+explicitly** for fixed nodes (see the caveat below).
 
-| Feature | Source | Override flag |
-|---------|--------|---------------|
-| Latitude/Longitude | Node manifest (`/etc/waggle/node-manifest-v2.json`) | `--lat` / `--lon` |
-| Week of year | Current date (BirdNET weeks 1-48) | `--week 25` or `--week -1` |
+| Feature | Source (in priority order) | Override flag |
+|---------|----------------------------|---------------|
+| Week of year | Current date (BirdNET weeks 1–48) | `--week 25` or `--week -1` |
+| Latitude/Longitude | (1) node manifest → (2) `WAGGLE_NODE_GPS_*` env → (3) live `sys.gps.*` (opt-in `--gps-subscribe`) | `--lat` / `--lon` |
 
-This means the same job YAML works on any node without changes.
-Only the `--camera` URL is node-specific.
+> **IMPORTANT — explicit coords required on SES.** Auto-resolution sounds like
+> "same YAML works on any node," but in practice:
+> - SES does **not** mount the node manifest into plugin pods, so source (1)
+>   is unavailable in scheduled jobs.
+> - Fixed nodes have no GPS publisher, so source (3) yields nothing.
+> - pywaggle (0.56) has no first-class location API; `sys.gps.*` is the only
+>   live mechanism.
+>
+> So for a fixed node like H00F, **set `--lat`/`--lon` in the job YAML**
+> (e.g. `--lat 41.7180 --lon -87.9827`). When geo-filtering is engaged the
+> startup log prints `Geo filter: N species expected at this location/time`.
+> If that line is absent, filtering is OFF and you will get the global
+> species list (out-of-range birds/frogs in your data).
+>
+> **Negative longitudes:** the Western Hemisphere has negative longitude
+> (Lemont, IL is -87.98). The plugin handles negative coordinates correctly
+> as of **v0.1.4**; earlier versions silently skipped geo-filtering for any
+> negative longitude.
 
 ## Audio Source Comparison
 

@@ -71,10 +71,27 @@ python3 app.py --num-recordings 0 --duration 60 --interval 300
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--lat` | -1 | Latitude for species range filtering. -1 = auto-detect from node manifest. |
-| `--lon` | -1 | Longitude for species range filtering. -1 = auto-detect from node manifest. |
+| `--lat` | -1 | Latitude for species range filtering. -1 = auto-resolve (node manifest / env vars; or live `sys.gps.*` with `--gps-subscribe`). |
+| `--lon` | -1 | Longitude for species range filtering. -1 = auto-resolve (same sources as `--lat`). |
+| `--gps-subscribe` | off | When auto-resolving, also try a live GPS fix by subscribing to the node's `sys.gps.*` stream (only useful on GPS-equipped/mobile nodes; off by default). |
 | `--week` | auto | Week of year (1–48) for seasonal filtering. 'auto' = current week. -1 for year-round. |
 | `--sf-thresh` | 0.03 | Species filter threshold for geo model |
+
+**How location resolution works.** When `--lat`/`--lon` are left at the -1
+sentinel, the plugin resolves the node's coordinates at runtime, trying these
+sources in order and using the first that succeeds: (1) the node manifest file;
+(2) Waggle-injected env vars (`WAGGLE_NODE_GPS_LAT`/`_LON`); (3) opt-in live
+`sys.gps.*` subscription (`--gps-subscribe`). Explicit `--lat`/`--lon` always
+override auto-resolution. If no source is available, geo-filtering is disabled
+and the plugin runs against the full global species list (logged clearly).
+
+> **pywaggle note:** as of pywaggle 0.56 there is no first-class location/GPS
+> accessor (no `waggle.data.gps`, no `Plugin.get_location()`). The only live-GPS
+> mechanism is the `sys.gps.*` measurement stream, hence `--gps-subscribe`. On
+> Sage today, SES does not mount the node manifest into plugin pods and fixed
+> nodes have no GPS publisher, so for a fixed node like H00F you must pass
+> `--lat`/`--lon` explicitly. A proper fix belongs upstream (a pywaggle location
+> API + WES injecting node GPS into the plugin environment).
 
 ### Runtime
 
@@ -105,6 +122,33 @@ df = sage_data_client.query(
 )
 print(df)
 ```
+
+# Deployment Notes & Known Behavior
+
+- **Geo-filtering requires coordinates that actually reach the plugin.** When
+  active, the eBird geo model restricts predictions to the species expected at
+  the node's location and week (e.g. ~124 species for Lemont, IL in late June
+  vs. the full global list of 6,522). The startup log prints
+  `Geo filter: N species expected at this location/time` when it is engaged. If
+  you instead see no such line, geo-filtering is OFF and you will get global
+  species (e.g. Australian or European birds in North-American data) — pass
+  `--lat`/`--lon` explicitly. Western-Hemisphere longitudes are negative; the
+  plugin handles the negative-longitude case correctly as of v0.1.4.
+
+- **Publish metadata must be strings.** pywaggle requires `meta` values to be
+  strings; the plugin stringifies all per-detection metadata (start/end times)
+  before publishing. (Earlier versions crashed on publish — fixed in v0.1.3.)
+
+- **Confidence ceiling on low-bandwidth audio.** If the audio source is a
+  reduced-bandwidth stream (e.g. a 16 kHz camera sub-stream, 8 kHz Nyquist),
+  set `--bandpass-fmax 8000` and expect lower peak confidences; tune
+  `--min-confidence` accordingly (0.35 has worked well for such sources).
+
+- **Historical data caveat.** Detections published before a given plugin version
+  reflect that version's behavior. The `meta.plugin` tag on every record carries
+  the exact image version (`registry.sagecontinuum.org/<ns>/birdnet-species:<ver>`),
+  so you can filter or partition the archive by version when analyzing data that
+  spans a behavior change.
 
 # References
 
