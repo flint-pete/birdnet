@@ -82,9 +82,16 @@ class BirdNETClassifier:
             self.model.get_sample_rate(),
         )
 
-        # Build species filter from geo model if coordinates provided
+        # Build species filter from geo model if coordinates are set.
+        # NOTE: -1/-1 is the "unset" sentinel. We must NOT use `lon > -1` as the
+        # "is set" test — real Western-Hemisphere longitudes are negative (e.g.
+        # H00F is -87.98), so `lon > -1` is False for all of the Americas and the
+        # geo filter would silently never build, letting the full global species
+        # list through. Test against the sentinel + valid geographic ranges.
         self.species_filter = None
-        if lat > -1 and lon > -1:
+        coords_set = not (lat == -1 and lon == -1)
+        coords_valid = -90 <= lat <= 90 and -180 <= lon <= 180
+        if coords_set and coords_valid:
             logger.info(
                 "Loading geo model for species filtering (%.4f, %.4f, week=%s)...",
                 lat, lon, week if week > 0 else "all",
@@ -552,7 +559,7 @@ def main():
         logger.info("  source=camera (%s)", safe_url)
     else:
         logger.info("  source=microphone (USB)")
-    if args.lat > -1 and args.lon > -1:
+    if not (args.lat == -1 and args.lon == -1):
         logger.info("  location=(%.4f, %.4f)  week=%d", args.lat, args.lon,
                      args.week if args.week > 0 else -1)
 
