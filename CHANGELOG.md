@@ -2,6 +2,19 @@
 
 All notable changes to the `birdnet-species` Sage plugin.
 
+## 0.1.5 — 2026-06-23
+
+### Added
+- **Standard `plugin.duration.*` performance telemetry** (matching
+  `avian-diversity-monitoring` / TAFT-node convention). Each cycle now publishes
+  nanosecond phase timings via pywaggle's `plugin.timeit`:
+  `plugin.duration.loadmodel` (acoustic + geo model load, once),
+  `plugin.duration.input` (audio capture/record + decode, per cycle),
+  `plugin.duration.inference` (classification, per cycle). These make cold-start
+  cost and per-cycle latency observable from the data plane and double as a
+  liveness signal on quiet cycles. Model load was refactored into a `load()`
+  method so it can be timed inside the Plugin context.
+
 ## 0.1.4 — 2026-06-23
 
 ### Fixed

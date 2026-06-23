@@ -109,6 +109,21 @@ Detections are published to Waggle as:
 - **`env.detection.audio.<scientific_name>`** — confidence (0–1) per species per detection window
 - **`env.detection.audio.summary`** — JSON summary per cycle with unique species and top confidences
 
+## Performance Telemetry
+
+Following the standard Sage convention (as used by `avian-diversity-monitoring`
+and other production plugins on TAFT nodes), every cycle also publishes
+nanosecond timing for the three execution phases. These make cold-start cost and
+per-cycle latency observable from the data plane — e.g. they immediately reveal
+whether a bounded GPU window is being consumed by model load vs. inference.
+
+- **`plugin.duration.loadmodel`** — ns to load the acoustic + geo models (once, at startup)
+- **`plugin.duration.input`** — ns to capture/record + decode the audio (per cycle)
+- **`plugin.duration.inference`** — ns to run classification (per cycle)
+
+Because these publish every cycle regardless of detections, they also serve as a
+liveness/heartbeat signal even when no species clears the confidence threshold.
+
 # Inference from Sage
 
 ```python

@@ -73,7 +73,16 @@ class BirdNETClassifier:
         self.bandpass_fmin = bandpass_fmin
         self.bandpass_fmax = bandpass_fmax
         self.batch_size = batch_size
+        self.model = None
+        self.species_filter = None
+        # Model + geo-filter construction is deferred to load() so it can be
+        # timed inside the Plugin context (plugin.duration.loadmodel).
 
+    def load(self):
+        """Load the acoustic model and (if coordinates are set) build the geo
+        species filter. Separated from __init__ so callers can wrap it in
+        plugin.timeit('plugin.duration.loadmodel')."""
+        lat, lon, week = self.lat, self.lon, self.week
         # Load acoustic model (auto-downloads on first use)
         logger.info("Loading BirdNET V2.4 acoustic model...")
         self.model = birdnet.load("acoustic", "2.4", "tf")
@@ -88,7 +97,6 @@ class BirdNETClassifier:
         # H00F is -87.98), so `lon > -1` is False for all of the Americas and the
         # geo filter would silently never build, letting the full global species
         # list through. Test against the sentinel + valid geographic ranges.
-        self.species_filter = None
         coords_set = not (lat == -1 and lon == -1)
         coords_valid = -90 <= lat <= 90 and -180 <= lon <= 180
         if coords_set and coords_valid:
@@ -99,7 +107,7 @@ class BirdNETClassifier:
             geo = birdnet.load("geo", "2.4", "tf")
             geo_week = week if 1 <= week <= 48 else None
             species_result = geo.predict(
-                lat, lon, week=geo_week, min_confidence=sf_thresh,
+                lat, lon, week=geo_week, min_confidence=self.sf_thresh,
             )
             self.species_filter = species_result.to_set()
             logger.info(
@@ -584,11 +592,23 @@ def main():
     def run_cycle(plugin=None):
         """Single record-classify-publish cycle."""
         timestamp = int(time.time_ns())
-        audio_path, cleanup = _get_audio(args)
+
+        # Acquire audio input, timed as plugin.duration.input (nanoseconds) —
+        # the standard Sage phase metric (see avian-diversity-monitoring/TAFT).
+        if plugin is not None:
+            with plugin.timeit("plugin.duration.input"):
+                audio_path, cleanup = _get_audio(args)
+        else:
+            audio_path, cleanup = _get_audio(args)
 
         try:
             t0 = time.time()
-            detections = classifier.classify_file(audio_path)
+            # Run inference, timed as plugin.duration.inference (nanoseconds).
+            if plugin is not None:
+                with plugin.timeit("plugin.duration.inference"):
+                    detections = classifier.classify_file(audio_path)
+            else:
+                detections = classifier.classify_file(audio_path)
             elapsed = time.time() - t0
 
             logger.info(
@@ -646,10 +666,16 @@ def main():
 
     try:
         if args.dry_run:
+            classifier.load()  # no Plugin context in dry-run; load untimed
             run_loop(plugin=None)
         else:
             from waggle.plugin import Plugin
             with Plugin() as plugin:
+                # Load model + geo filter, timed as plugin.duration.loadmodel
+                # (nanoseconds) — standard Sage telemetry; makes cold-start cost
+                # observable for window sizing.
+                with plugin.timeit("plugin.duration.loadmodel"):
+                    classifier.load()
                 run_loop(plugin=plugin)
     except KeyboardInterrupt:
         logger.info("Interrupted — shutting down")
