@@ -148,7 +148,7 @@ Detections are published to Waggle as:
 
 - **`env.detection.audio.<scientific_name>`** — confidence (0–1) per species per detection window
 - **`env.detection.audio.summary`** — JSON summary per cycle with unique species and top confidences. Published EVERY cycle (heartbeat), even with zero detections, so the data plane proves the job ran.
-- **`upload`** (audio clip) — the recorded clip, uploaded only when a detection matches a `--save-match` rule (see above). Meta carries `top_species`, `common_name`, `confidence`.
+- **`upload`** (audio clip) — the recorded clip, uploaded only when a detection matches a `--save-match` rule (see above). Saved as **lossless FLAC** (`.flac`): ~50-70% smaller than WAV with no quality loss, and the Sage portal query-browser renders an inline `<audio>` player for `.flac` uploads (it does not for `.wav`/`.mp3`). Meta carries `top_species`, `common_name`, `confidence`.
 
 ## Performance Telemetry
 

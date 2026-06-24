@@ -156,7 +156,11 @@ class BirdNETClassifier:
 
 # ── audio sources ───────────────────────────────────────────────────
 def record_from_microphone(duration_s: float, sample_rate: int = 48000) -> str:
-    """Record audio from the node's USB microphone via pywaggle."""
+    """Record audio from the node's USB microphone via pywaggle.
+
+    Saved as FLAC (lossless) for the same reasons as the camera path: smaller
+    than WAV, no quality loss for BirdNET, and the Sage portal inlines .flac.
+    """
     from waggle.data.audio import Microphone
 
     mic = Microphone(samplerate=sample_rate)
@@ -164,14 +168,22 @@ def record_from_microphone(duration_s: float, sample_rate: int = 48000) -> str:
     sample = mic.record(duration_s)
 
     tmpdir = tempfile.mkdtemp(prefix="birdnet_")
-    wav_path = os.path.join(tmpdir, "recording.wav")
-    sample.save(wav_path)
-    logger.info("Audio saved to %s", wav_path)
-    return wav_path
+    flac_path = os.path.join(tmpdir, "recording.flac")
+    # pywaggle's AudioSample.save() selects the container/codec from the file
+    # extension via soundfile, which supports FLAC natively.
+    sample.save(flac_path)
+    logger.info("Audio saved to %s (FLAC)", flac_path)
+    return flac_path
 
 
 def record_from_camera(url: str, duration_s: float, sample_rate: int = 48000) -> str:
     """Capture audio from a network camera via ffmpeg.
+
+    Captures to FLAC (lossless): same audio fidelity as PCM/WAV for BirdNET
+    (which reads via librosa/soundfile — FLAC-capable), but ~50-70% smaller on
+    disk and in Beehive, AND the Sage portal query-browser inlines an <audio>
+    player only for .flac uploads (it does not recognize .wav/.mp3). FLAC is
+    also a recognized archival audio format.
 
     Supports any ffmpeg-compatible source URL:
       - Mobotix MxPEG:  http://user:pass@IP/control/faststream.jpg?stream=MxPEG&needlength
@@ -179,7 +191,7 @@ def record_from_camera(url: str, duration_s: float, sample_rate: int = 48000) ->
       - HTTP streams:   http://IP/audio.cgi
     """
     tmpdir = tempfile.mkdtemp(prefix="birdnet_")
-    wav_path = os.path.join(tmpdir, "camera_audio.wav")
+    flac_path = os.path.join(tmpdir, "camera_audio.flac")
 
     # Detect Mobotix MxPEG streams — need -f mxg input format
     input_args = []
@@ -193,11 +205,11 @@ def record_from_camera(url: str, duration_s: float, sample_rate: int = 48000) ->
         + input_args
         + ["-i", url,
            "-vn",                     # no video
-           "-acodec", "pcm_s16le",    # raw PCM output
+           "-acodec", "flac",         # lossless FLAC (portal inlines .flac)
            "-ar", str(sample_rate),   # resample to target rate
            "-ac", "1",               # mono
            "-t", str(duration_s),
-           wav_path]
+           flac_path]
     )
 
     # Log the command without credentials
@@ -215,12 +227,12 @@ def record_from_camera(url: str, duration_s: float, sample_rate: int = 48000) ->
         logger.error("ffmpeg failed (exit %d): %s", result.returncode, result.stderr[-300:])
         raise RuntimeError(f"ffmpeg failed to capture audio from camera: {result.stderr[-200:]}")
 
-    if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1000:
+    if not os.path.exists(flac_path) or os.path.getsize(flac_path) < 1000:
         raise RuntimeError("ffmpeg produced no audio output — check camera URL and credentials")
 
-    size = os.path.getsize(wav_path)
-    logger.info("Camera audio saved to %s (%d bytes)", wav_path, size)
-    return wav_path
+    size = os.path.getsize(flac_path)
+    logger.info("Camera audio saved to %s (%d bytes, FLAC)", flac_path, size)
+    return flac_path
 
 
 # ── publishing ──────────────────────────────────────────────────────

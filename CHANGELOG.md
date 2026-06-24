@@ -2,6 +2,24 @@
 
 All notable changes to the `birdnet-species` Sage plugin.
 
+## 0.2.1 — 2026-06-24
+
+### Changed
+- **Saved audio clips are now FLAC instead of WAV.** Captured/recorded audio is
+  written as lossless FLAC (ffmpeg `-acodec flac`; mic path saves `.flac`). This:
+  - **Makes clips inline in the Sage portal.** The query-browser
+    (`sage-gui` `QueryBrowser.tsx`) renders an inline `<audio>` player ONLY for
+    `.flac` uploads — it does not recognize `.wav` or `.mp3`. 0.2.0 saved `.wav`,
+    so clips showed as a download link with no player. They now play inline,
+    matching the `audio-sampler` plugin.
+  - **Cuts storage ~50-70%** (a 30 s 48 kHz mono clip drops from ~2.88 MB to
+    ~1-1.4 MB) with **zero quality loss** — FLAC is lossless and BirdNET reads it
+    natively via librosa/soundfile.
+  - **Improves archival fidelity** — FLAC is a recognized long-term archival
+    audio format.
+- No behavior change to detection, publishing, heartbeat, or `--save-match`
+  semantics; only the on-disk/uploaded container changed (WAV → FLAC).
+
 ## 0.2.0 — 2026-06-24
 
 ### Added
