@@ -59,7 +59,7 @@ python3 app.py --num-recordings 0 --duration 60 --interval 300
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--min-confidence` | 0.25 | Minimum confidence threshold (0.01–0.99) |
+| `--min-confidence` | 0.25 | **Reporting floor** — minimum confidence to PUBLISH a detection topic (0.01–0.99). Raise to reduce noisy reports. Does NOT control audio saving — see `--save-match`. |
 | `--sensitivity` | 1.0 | Detection sensitivity (0.5–1.5). Higher = more detections. |
 | `--overlap` | 0.0 | Overlap in seconds between 3-second windows (0.0–2.9) |
 | `--top-k` | 5 | Max predictions per 3-second chunk |
@@ -100,14 +100,55 @@ and the plugin runs against the full global species list (logged clearly).
 | `--num-recordings` | 1 | Number of recording cycles. 0 = loop forever. |
 | `--interval` | 0.0 | Seconds between recording cycles |
 | `--output`, `-o` | None | Path to save CSV results |
+| `--save-match` | None | **Audio saving** — OR-list of `Name:confidence` rules, e.g. `"Northern Cardinal:0.5,Barn Owl:0.4"`. Clip uploaded if ANY detection matches ANY rule (exact, case-insensitive, common OR scientific name). `"*:0.5"` saves any clip with a detection ≥0.5. Operates on published detections only. Omit = save no audio. The ONLY way audio clips are saved. |
 | `--dry-run` | false | Run without publishing to Waggle |
+
+## Saving Audio Clips: `--save-match`
+
+This plugin separates *what it reports* from *what audio it saves*. Publishing a
+detection topic is cheap; uploading a 15-second audio clip to Beehive is
+expensive (bandwidth + storage). Two different flags control them:
+
+- **`--min-confidence`** is the reporting floor: which detections get *published*
+  as topics. Raise it to reduce noisy reports. It does NOT save audio.
+- **`--save-match`** controls audio *saving*, and is the only way a clip is
+  uploaded.
+
+By default (`--save-match` omitted) **no audio is saved** — only detection topics
+and the per-cycle heartbeat are published. To save clips, give `--save-match` a
+comma-separated OR-list of `Name:confidence` rules. A clip is uploaded if **any**
+detection in it matches **any** rule:
+
+```
+--save-match "Northern Cardinal:0.5,Barn Owl:0.4"
+```
+
+This saves the recorded clip whenever a Northern Cardinal is detected at ≥0.5
+**or** a Barn Owl at ≥0.4. The `Name` is matched **case-insensitively** and
+**exactly** against the **common name** or the **scientific name** BirdNET emits
+(e.g. "Northern Cardinal" or "Cardinalis cardinalis"). There is **no substring
+matching**. To save any clip with a confident detection, use the wildcard:
+
+```
+--save-match "*:0.5"      # save any clip with a detection >= 0.5
+```
+
+> **`--save-match` operates on published detections only.** A rule's confidence
+> is only meaningful at or above `--min-confidence`. With `--min-confidence 0.5`
+> a rule `Barn Owl:0.3` effectively saves Barn Owls at ≥0.5, because a 0.4 Barn
+> Owl was never published. Lower `--min-confidence` to save lower-confidence
+> detections.
+
+One recorded clip can contain several detections; **any** matching detection
+saves the whole clip **once** (it is not uploaded per detection).
 
 # Ontology
 
 Detections are published to Waggle as:
 
 - **`env.detection.audio.<scientific_name>`** — confidence (0–1) per species per detection window
-- **`env.detection.audio.summary`** — JSON summary per cycle with unique species and top confidences
+- **`env.detection.audio.summary`** — JSON summary per cycle with unique species and top confidences. Published EVERY cycle (heartbeat), even with zero detections, so the data plane proves the job ran.
+- **`upload`** (audio clip) — the recorded clip, uploaded only when a detection matches a `--save-match` rule (see above). Meta carries `top_species`, `common_name`, `confidence`.
 
 ## Performance Telemetry
 

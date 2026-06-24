@@ -35,6 +35,8 @@ from pathlib import Path
 
 import numpy as np
 
+from save_match import parse_save_match, should_save, SaveMatchError
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -498,6 +500,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to save CSV results (optional).",
     )
     runtime.add_argument(
+        "--save-match", type=str, default="",
+        help="When to SAVE (upload) the recorded audio clip. Comma-separated "
+             "OR-list of 'Name:confidence' rules, e.g. "
+             "\"Northern Cardinal:0.5,Barn Owl:0.4\". Name is matched "
+             "case-insensitively and EXACTLY against the common OR scientific "
+             "name. Use \"*:0.5\" to save any clip with a detection >=0.5. The "
+             "clip is saved if ANY detection matches ANY rule. Operates only on "
+             "published detections (>= --min-confidence). Omit to save no audio "
+             "(detection topics + heartbeat still publish).",
+    )
+    runtime.add_argument(
         "--dry-run", action="store_true",
         help="Run without publishing to Waggle (for testing).",
     )
@@ -536,6 +549,21 @@ def main():
     args.min_confidence = max(0.01, min(args.min_confidence, 0.99))
     args.sensitivity = max(0.5, min(args.sensitivity, 1.5))
     args.overlap = max(0.0, min(args.overlap, 2.9))
+
+    # Parse --save-match up front and FAIL FAST on a malformed spec: a typo'd
+    # save rule that silently saved nothing would waste an entire deployment.
+    try:
+        save_rules = parse_save_match(args.save_match)
+    except SaveMatchError as e:
+        logger.error("Invalid --save-match: %s", e)
+        sys.exit(2)
+    if save_rules:
+        logger.info("Audio save rules (--save-match): %s",
+                    ", ".join(f"{'*' if r.is_wildcard else r.name}>={r.min_confidence}"
+                              for r in save_rules))
+    else:
+        logger.info("No --save-match rules: audio clips will NOT be saved "
+                    "(detection topics + heartbeat still publish every cycle).")
 
     # Resolve --week: "auto" → current week, or parse as int
     if args.week.lower() == "auto":
@@ -616,12 +644,39 @@ def main():
                 os.path.basename(audio_path), len(detections), elapsed,
             )
 
+            # Heartbeat invariant: ALWAYS publish (publish_detections emits the
+            # summary even with zero detections), so the data API carries a
+            # per-cycle liveness signal. Previously this call was gated behind
+            # `if detections:`, so quiet cycles published NOTHING — making a live
+            # job indistinguishable from a dead one.
+            if plugin is not None:
+                publish_detections(plugin, detections, timestamp)
             if detections:
-                if plugin is not None:
-                    publish_detections(plugin, detections, timestamp)
                 _log_detections(detections)
             else:
                 logger.info("  No detections above threshold %.2f", args.min_confidence)
+
+            # SAVE (selective): upload the captured audio clip only when a
+            # detection matches a --save-match rule. ANY (rule x detection)
+            # match saves the whole clip once. No rules => never saves.
+            if plugin is not None and save_rules and should_save(
+                save_rules, detections,
+                name_keys=["common_name", "scientific_name"],
+            ):
+                try:
+                    top = max(detections, key=lambda d: d["confidence"])
+                    plugin.upload_file(
+                        audio_path, timestamp=timestamp,
+                        meta={
+                            "top_species": str(top["scientific_name"]),
+                            "common_name": str(top["common_name"]),
+                            "confidence": str(top["confidence"]),
+                        },
+                    )
+                    logger.info("Saved audio clip (save-match matched: %s %.4f)",
+                                top["scientific_name"], top["confidence"])
+                except Exception:
+                    logger.exception("Audio clip upload failed")
 
             if args.output and detections:
                 _save_csv(detections, args.output, audio_path)

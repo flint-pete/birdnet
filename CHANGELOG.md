@@ -2,6 +2,33 @@
 
 All notable changes to the `birdnet-species` Sage plugin.
 
+## 0.2.0 — 2026-06-24
+
+### Added
+- **`--save-match`: species-aware audio-clip saving, decoupled from publishing.**
+  The recorded clip is now uploaded only when a detection matches a user-supplied
+  OR-list of `Name:confidence` rules (e.g. `"Northern Cardinal:0.5,Barn Owl:0.4"`).
+  A clip is saved when ANY detection matches ANY rule. Name matching is
+  case-insensitive and EXACT against the common OR scientific name (no substring).
+  The wildcard `"*:0.5"` saves any clip with a detection ≥0.5. Implemented via the
+  shared `save_match.py` helper (29 unit tests, identical copy to bioclip/yolo).
+  This is the first time birdnet uploads audio at all — previously it published
+  only topics + CSV.
+
+### Fixed
+- **Heartbeat never fired on quiet cycles.** `publish_detections()` always emits
+  the `env.detection.audio.summary` heartbeat internally, but the CALL was gated
+  behind `if detections:` in the run cycle — so cycles with zero detections
+  published NOTHING, making a live job indistinguishable from a dead one. The call
+  is now unconditional; every cycle emits the summary heartbeat (and
+  `plugin.duration.*`), even with zero detections.
+
+### Changed
+- Publish (topics + heartbeat, always) and save (audio clip, selective) are now
+  strictly separate code paths. `--min-confidence` remains the publish/detection
+  floor; `--save-match` is the only thing that uploads audio. Omitting
+  `--save-match` saves no audio (topics + heartbeat still publish).
+
 ## 0.1.6 — 2026-06-23
 
 ### Fixed

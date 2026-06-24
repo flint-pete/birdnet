@@ -21,6 +21,7 @@ birdnet.load('acoustic', '2.4', 'tf'); \
 birdnet.load('geo', '2.4', 'tf'); \
 print('Models downloaded successfully')"
 
+COPY save_match.py .
 COPY app.py .
 
 ENTRYPOINT ["python3", "app.py"]

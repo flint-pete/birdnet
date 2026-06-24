@@ -43,7 +43,7 @@ name: birdnet-reolink
 plugins:
   - name: birdnet-species
     pluginSpec:
-      image: registry.sagecontinuum.org/beckman/birdnet-species:0.1.6
+      image: registry.sagecontinuum.org/beckman/birdnet-species:0.2.0
       args:
         - "--camera"
         # Reolink FLV/BCS URL — credentials as QUERY PARAMS, not basic auth.
@@ -53,6 +53,11 @@ plugins:
         - "30"
         - "--min-confidence"
         - "0.35"
+        - "--save-match"
+        # Save the audio clip for ANY detection at >=0.35 (matches the publish
+        # floor — every real detection gets its clip archived). To save only
+        # target species, replace with e.g. "Archilochus colubris:0.4".
+        - "*:0.35"
         - "--bandpass-fmax"
         - "8000"
         # Geo-filtering: SES does NOT mount the node manifest into the pod and
