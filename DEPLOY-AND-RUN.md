@@ -18,6 +18,137 @@
    > **Namespace note:** the ECR namespace is `beckman`, not `flint-pete`.
    > Use `registry.sagecontinuum.org/beckman/birdnet-species:0.1.1`.
 
+## Sideloading Builds
+
+> **This section is self-contained and intended to be lifted into a GitHub
+> issue.** It explains a workaround we currently rely on to deploy these
+> plugins, why it is necessary, and what a durable fix would look like. The
+> Sage cyberinfrastructure team can use it to decide how to fix the build
+> pipeline.
+
+### What "sideloading" means here
+
+*Sideloading* is the practice of building a plugin's container image **directly
+on the target edge node** and importing it straight into that node's k3s
+containerd image store — **bypassing the Sage ECR build pipeline and the Docker
+registry entirely**. The scheduler (SES) then runs the locally-present image
+without ever pulling from a registry.
+
+In one line, on the node:
+
+```bash
+sudo docker build -t registry.sagecontinuum.org/beckman/<plugin>:<ver> .
+sudo docker save  registry.sagecontinuum.org/beckman/<plugin>:<ver> \
+  | sudo k3s ctr images import -
+```
+
+The key that makes this work is **`imagePullPolicy: IfNotPresent`**, which SES
+pods use. When an image with the exact registry-qualified tag is already present
+in the node's containerd store, the kubelet uses that cached copy and never
+contacts the registry. So the image does **not** have to exist in the registry
+at all — it only has to exist *locally under the name the job YAML references*.
+
+### Why we have to sideload (the problem this works around)
+
+The documented Sage workflow is "Create App → Register and Build," where the ECR
+portal builds your image from your GitHub repo and pushes it to
+`registry.sagecontinuum.org`. For our Thor (NVIDIA Jetson, **arm64**) plugins
+that path does not work, for two independent reasons:
+
+1. **The ECR/Jenkins build pipeline cannot produce arm64 NVIDIA images.** The
+   build runs on **x86_64** and cross-builds `linux/arm64` under **QEMU
+   emulation**. On the NVIDIA CUDA base image used by the GPU plugins
+   (`sage-yolo`, `sage-bioclip`) the emulated build crashes with
+   **`signal 6 / SIGABRT (exit 134)`**. (BirdNET uses a CPU-only
+   `python:3.12-slim` base and does *not* hit this crash — but we keep all three
+   plugins on one identical deploy path so there is a single procedure to learn,
+   not a per-plugin special case.)
+
+2. **We cannot `docker push` to the registry.** A Sage portal access token
+   authenticates for *pull* but is **read-only**; any push returns
+   `denied: requested access to the resource is denied`. Registry write access
+   is reserved for the Jenkins pipeline. So even when we *can* build a correct
+   arm64 image natively on Thor, we have no way to publish it to the registry.
+
+With the portal build crashing **and** registry push denied, there is no
+supported path to get an arm64 NVIDIA image onto the node. Sideloading is the
+workaround that bridges that gap.
+
+### How to use it (the full procedure)
+
+Sideloading replaces only the *image delivery* step; the rest of the SES
+workflow is unchanged. Two pieces are needed for SES to accept and run the job:
+
+**1. The image, present locally on the node** (the sideload itself):
+
+```bash
+cd ~/AI-projects/<plugin> && git pull
+# Build natively on the node (arm64, no QEMU) with the FULL registry path as tag:
+sudo docker build -t registry.sagecontinuum.org/beckman/<plugin>:<ver> .
+# Import into k3s containerd:
+sudo docker save registry.sagecontinuum.org/beckman/<plugin>:<ver> \
+  | sudo k3s ctr images import -
+# Verify it landed and is CRI-managed (the label means SES can see it):
+sudo k3s ctr images ls | grep <plugin>:<ver>
+```
+
+The tag **must** be the full `registry.sagecontinuum.org/...` path and **must**
+exactly match the `image:` field in the job YAML, or k3s won't match the cached
+copy.
+
+**2. A catalog metadata record** (so SES validation passes). SES validates the
+job's image against the ECR app **catalog** (`ecr.sagecontinuum.org`), *not*
+against the registry or the sideloaded image. Without a catalog record for the
+exact version, `sesctl submit` fails with
+`[registry.sagecontinuum.org/<ns>/<plugin>:<ver> does not exist in ECR]`. You do
+**not** need the portal *build* to succeed — only the catalog *record*. Register
+it directly via the ECR API with the helper script (it clones a prior version's
+metadata, bumps the version + git source, and POSTs to `/api/submit`):
+
+```bash
+python3 scripts/register-ecr-version.py \
+  --namespace beckman --name <plugin> \
+  --from-version <prev-ver> --version <ver> \
+  --git-url https://github.com/<owner>/<repo>.git \
+  --token "$SAGE_TOKEN"
+```
+
+Then create + submit the job as normal (`sesctl create -f jobs/...yaml`,
+`sesctl submit -j <id>`). On the next tick the pod starts from the sideloaded
+image; the pod events show *"already present on machine"*, confirming the
+sideload was used.
+
+### Limitations and caveats
+
+- **Per-node and manual.** The image lives only on the node you imported it
+  into. Every node, and every code change (new version tag), requires a repeat
+  build + sideload. There is no fan-out.
+- **Not reproducible by the team.** Because the image was never pushed, no one
+  else (and no CI) can pull the exact bits that are running. Provenance rests on
+  the git commit + the `register-ecr-version` metadata, not on a registry digest.
+- **Disk usage.** Sideloaded GPU images are large (~28 GiB for the bioclip
+  image); they accumulate in containerd until pruned.
+- **The catalog record is metadata only.** It makes SES validation pass but does
+  not (and cannot) verify the running image matches the catalog entry.
+
+### The durable fix (what we are asking the team to decide)
+
+The sideload workaround is reliable but manual and unscalable. Either of the
+following would remove it entirely and restore the normal "Register and Build"
+workflow for every Thor-targeted plugin (yolo, bioclip, birdnet):
+
+- **(a) Grant registry push/write access** for
+  `registry.sagecontinuum.org/beckman/` to a Sage portal token, so a native
+  Thor build can be `docker push`ed normally; **or**
+- **(b) Add a native arm64 build node** to the Jenkins/ECR pipeline so the
+  portal "Register and Build" path produces arm64 NVIDIA images without QEMU.
+
+Reference: https://sagecontinuum.org/docs/tutorials/edge-apps/publishing-to-ecr
+
+> A step-by-step version of this procedure, with the per-step verification
+> commands, also lives in [`DOCKER-BUILD.md`](DOCKER-BUILD.md) under
+> "Production: Scheduled SES Cron Jobs on Thor."
+
 ## Quick Test (pluginctl, one-shot)
 
 SSH into the target node and run the plugin once to verify it works
@@ -112,8 +243,8 @@ Acoustic model loaded (sample rate: 48000 Hz)
 Loading geo model for species filtering (41.7180, -87.9827, week=23)...
 Geo filter: 187 species expected at this location/time
 Capturing 30 seconds from camera ...
-Camera audio saved to /tmp/birdnet_.../camera_audio.wav (...)
-Classified camera_audio.wav: 2 detections in 3.50s
+Camera audio saved to /tmp/birdnet_.../camera_audio.flac (..., FLAC)
+Classified camera_audio.flac: 2 detections in 3.50s
   Passer domesticus (House Sparrow): 0.8666 [54.0-57.0s]
   Haemorhous mexicanus (House Finch): 0.6200 [3.0-6.0s]
 ```
