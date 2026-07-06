@@ -1,5 +1,11 @@
 # Docker Build Guide
 
+> **Hitting a build/deploy blocker?** Known Sage platform bugs and their
+> workarounds (arm64/Thor build failures, buildkit `/proc/acpi`, registry push
+> denied, side-loading, node control-plane) are tracked in
+> `~/AI-projects/Infra-problems-to-fix.md` (issue-ready writeups for the
+> cyberinfra team).
+
 ## Quick Build
 
 ```bash
