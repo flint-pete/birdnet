@@ -1,159 +1,89 @@
 # Deploy and Run Guide
 
-> **Hitting a build/deploy blocker?** Known Sage platform bugs and their
-> workarounds (arm64/Thor build failures, buildkit `/proc/acpi`, registry push
-> denied, side-loading, node control-plane reconnect, runtime GPS/VSN, data-API
-> `meta.task` gotcha) are tracked in `~/AI-projects/Infra-problems-to-fix.md`
-> (issue-ready writeups for the cyberinfra team).
+> **Status (2026-07-10):** BirdNET is now built by the standard Sage ECR
+> "Register and Build" pipeline and runs as an **official SES job** on H00F
+> (job `birdnet-reolink`, image `birdnet-species:0.2.1`). The Thor/arm64 build
+> blocker (buildkit `/proc/acpi` runc bug) has been **fixed by the CI team** —
+> so the manual side-load workaround is **no longer required**. Side-loading is
+> retained below only as a historical fallback for offline/air-gapped bring-up.
+> Remaining known platform notes (runtime GPS/VSN injection, data-API
+> `meta.task` gotcha) are tracked in `~/AI-projects/Infra-problems-to-fix.md`.
 
 ## Prerequisites
 
 1. **Sage portal account** — get your access token from
    [portal.sagecontinuum.org/account/access](https://portal.sagecontinuum.org/account/access)
 
-2. **sesctl installed** — should already be on Sage nodes. Verify:
+2. **sesctl installed** — already present on Sage nodes. Verify:
    ```bash
    which sesctl
    ```
 
-3. **ECR image built** — check the ECR portal at
+3. **App built in ECR** — check the ECR portal at
    [portal.sagecontinuum.org/apps](https://portal.sagecontinuum.org/apps)
-   and find `birdnet-species`. Copy the registry tag from the "Tags" tab
-   (e.g. `registry.sagecontinuum.org/beckman/birdnet-species:0.1.1`).
+   and find `birdnet-species`. The current release is **0.2.1**, built from the
+   `v0.2.1` git tag; its registry image is
+   `registry.sagecontinuum.org/beckman/birdnet-species:0.2.1`.
 
    > **Namespace note:** the ECR namespace is `beckman`, not `flint-pete`.
-   > Use `registry.sagecontinuum.org/beckman/birdnet-species:0.1.1`.
 
-## Sideloading Builds
+## Building via ECR (the standard path)
 
-> **This section is self-contained and intended to be lifted into a GitHub
-> issue.** It explains a workaround we currently rely on to deploy these
-> plugins, why it is necessary, and what a durable fix would look like. The
-> Sage cyberinfrastructure team can use it to decide how to fix the build
-> pipeline.
+This is now the primary path — no node-local build, no side-load.
 
-### What "sideloading" means here
+1. **Tag the release in git** (ECR builds a specific version from a tag matching
+   `sage.yaml`'s `version:`):
+   ```bash
+   git tag -a v0.2.1 -m "birdnet-species 0.2.1"
+   git push origin v0.2.1
+   ```
+2. **Register + Build** in the ECR portal (Portal → My Apps → birdnet-species →
+   add version from GitHub), or via `scripts/register-ecr-version.py`. The portal
+   builds `linux/arm64` from `flint-pete/birdnet` using `sage.yaml` + `Dockerfile`.
+   BirdNET uses a CPU-only `python:3.12-slim` base (no CUDA/QEMU path), so the
+   build is clean.
+3. **Make the app public**, or SES returns `registry ... does not exist in ECR`.
 
-*Sideloading* is the practice of building a plugin's container image **directly
-on the target edge node** and importing it straight into that node's k3s
-containerd image store — **bypassing the Sage ECR build pipeline and the Docker
-registry entirely**. The scheduler (SES) then runs the locally-present image
-without ever pulling from a registry.
+Once the build succeeds, the image is pullable fleet-wide and SES can schedule it
+on any node — proceed to "Scheduled Deployment (sesctl)" below.
 
-In one line, on the node:
+## Side-loading (historical fallback — normally NOT needed)
 
-```bash
-sudo docker build -t registry.sagecontinuum.org/beckman/<plugin>:<ver> .
-sudo docker save  registry.sagecontinuum.org/beckman/<plugin>:<ver> \
-  | sudo k3s ctr images import -
-```
+> **You almost certainly do not need this.** As of 2026-07-10 the ECR pipeline
+> builds birdnet natively, so use "Building via ECR" above. This section is kept
+> for the record and for offline bring-up (e.g. a node that cannot reach the
+> registry, or reproducing a pre-fix deployment). It was the workaround used
+> while the Thor build was broken.
 
-The key that makes this work is **`imagePullPolicy: IfNotPresent`**, which SES
-pods use. When an image with the exact registry-qualified tag is already present
-in the node's containerd store, the kubelet uses that cached copy and never
-contacts the registry. So the image does **not** have to exist in the registry
-at all — it only has to exist *locally under the name the job YAML references*.
+<details>
+<summary>Expand: side-load procedure (build on-node → import into k3s)</summary>
 
-### Why we have to sideload (the problem this works around)
-
-The documented Sage workflow is "Create App → Register and Build," where the ECR
-portal builds your image from your GitHub repo and pushes it to
-`registry.sagecontinuum.org`. For our Thor (NVIDIA Jetson, **arm64**) plugins
-that path does not work, for two independent reasons:
-
-1. **The ECR/Jenkins build pipeline cannot produce arm64 NVIDIA images.** The
-   build runs on **x86_64** and cross-builds `linux/arm64` under **QEMU
-   emulation**. On the NVIDIA CUDA base image used by the GPU plugins
-   (`sage-yolo`, `sage-bioclip`) the emulated build crashes with
-   **`signal 6 / SIGABRT (exit 134)`**. (BirdNET uses a CPU-only
-   `python:3.12-slim` base and does *not* hit this crash — but we keep all three
-   plugins on one identical deploy path so there is a single procedure to learn,
-   not a per-plugin special case.)
-
-2. **We cannot `docker push` to the registry.** A Sage portal access token
-   authenticates for *pull* but is **read-only**; any push returns
-   `denied: requested access to the resource is denied`. Registry write access
-   is reserved for the Jenkins pipeline. So even when we *can* build a correct
-   arm64 image natively on Thor, we have no way to publish it to the registry.
-
-With the portal build crashing **and** registry push denied, there is no
-supported path to get an arm64 NVIDIA image onto the node. Sideloading is the
-workaround that bridges that gap.
-
-### How to use it (the full procedure)
-
-Sideloading replaces only the *image delivery* step; the rest of the SES
-workflow is unchanged. Two pieces are needed for SES to accept and run the job:
-
-**1. The image, present locally on the node** (the sideload itself):
+*Side-loading* builds the container image **directly on the target edge node**
+and imports it into that node's k3s containerd store, bypassing the registry.
+SES pods use `imagePullPolicy: IfNotPresent`, so a locally-present image under the
+exact registry-qualified tag is used without pulling.
 
 ```bash
-cd ~/AI-projects/<plugin> && git pull
-# Build natively on the node (arm64, no QEMU) with the FULL registry path as tag:
-sudo docker build -t registry.sagecontinuum.org/beckman/<plugin>:<ver> .
+cd ~/AI-projects/birdnet && git pull
+# Build natively on the node (arm64, no QEMU), tagged with the FULL registry path:
+sudo docker build -t registry.sagecontinuum.org/beckman/birdnet-species:0.2.1 .
 # Import into k3s containerd:
-sudo docker save registry.sagecontinuum.org/beckman/<plugin>:<ver> \
+sudo docker save registry.sagecontinuum.org/beckman/birdnet-species:0.2.1 \
   | sudo k3s ctr images import -
-# Verify it landed and is CRI-managed (the label means SES can see it):
-sudo k3s ctr images ls | grep <plugin>:<ver>
+# Verify it landed and is CRI-managed:
+sudo k3s ctr images ls | grep birdnet-species:0.2.1
 ```
 
-The tag **must** be the full `registry.sagecontinuum.org/...` path and **must**
-exactly match the `image:` field in the job YAML, or k3s won't match the cached
-copy.
+The tag **must** be the full `registry.sagecontinuum.org/...` path and match the
+job YAML's `image:` field exactly. You still need a catalog metadata record for
+SES validation (`scripts/register-ecr-version.py`); with ECR now building, that
+record is created by the normal build and this whole step is unnecessary.
 
-**2. A catalog metadata record** (so SES validation passes). SES validates the
-job's image against the ECR app **catalog** (`ecr.sagecontinuum.org`), *not*
-against the registry or the sideloaded image. Without a catalog record for the
-exact version, `sesctl submit` fails with
-`[registry.sagecontinuum.org/<ns>/<plugin>:<ver> does not exist in ECR]`. You do
-**not** need the portal *build* to succeed — only the catalog *record*. Register
-it directly via the ECR API with the helper script (it clones a prior version's
-metadata, bumps the version + git source, and POSTs to `/api/submit`):
-
-```bash
-python3 scripts/register-ecr-version.py \
-  --namespace beckman --name <plugin> \
-  --from-version <prev-ver> --version <ver> \
-  --git-url https://github.com/<owner>/<repo>.git \
-  --token "$SAGE_TOKEN"
-```
-
-Then create + submit the job as normal (`sesctl create -f jobs/...yaml`,
-`sesctl submit -j <id>`). On the next tick the pod starts from the sideloaded
-image; the pod events show *"already present on machine"*, confirming the
-sideload was used.
-
-### Limitations and caveats
-
-- **Per-node and manual.** The image lives only on the node you imported it
-  into. Every node, and every code change (new version tag), requires a repeat
-  build + sideload. There is no fan-out.
-- **Not reproducible by the team.** Because the image was never pushed, no one
-  else (and no CI) can pull the exact bits that are running. Provenance rests on
-  the git commit + the `register-ecr-version` metadata, not on a registry digest.
-- **Disk usage.** Sideloaded GPU images are large (~28 GiB for the bioclip
-  image); they accumulate in containerd until pruned.
-- **The catalog record is metadata only.** It makes SES validation pass but does
-  not (and cannot) verify the running image matches the catalog entry.
-
-### The durable fix (what we are asking the team to decide)
-
-The sideload workaround is reliable but manual and unscalable. Either of the
-following would remove it entirely and restore the normal "Register and Build"
-workflow for every Thor-targeted plugin (yolo, bioclip, birdnet):
-
-- **(a) Grant registry push/write access** for
-  `registry.sagecontinuum.org/beckman/` to a Sage portal token, so a native
-  Thor build can be `docker push`ed normally; **or**
-- **(b) Add a native arm64 build node** to the Jenkins/ECR pipeline so the
-  portal "Register and Build" path produces arm64 NVIDIA images without QEMU.
-
-Reference: https://sagecontinuum.org/docs/tutorials/edge-apps/publishing-to-ecr
-
-> A step-by-step version of this procedure, with the per-step verification
-> commands, also lives in [`DOCKER-BUILD.md`](DOCKER-BUILD.md) under
-> "Production: Scheduled SES Cron Jobs on Thor."
+**Why it was needed (historical):** the ECR/Jenkins buildkit failed on every
+`RUN` step with a `/proc/acpi` runc error, and portal tokens are pull-only
+(no `docker push`). Both are resolved for birdnet — the CI team fixed the
+buildkit bug, and the ECR pipeline now produces the arm64 image.
+</details>
 
 ## Quick Test (pluginctl, one-shot)
 
@@ -164,7 +94,7 @@ before scheduling. No sesctl token needed.
 
 ```bash
 sudo pluginctl deploy -n birdnet-test \
-  registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 -- \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.2.1 -- \
   --duration 30 --min-confidence 0.60
 
 # Check logs:
@@ -189,7 +119,7 @@ sudo pluginctl rm birdnet-test
 sudo pluginctl rm birdnet-test   # remove any prior pod first (see note below)
 
 sudo pluginctl deploy -n birdnet-test \
-  registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 -- \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.2.1 -- \
   --camera 'http://CAMERA_IP:PORT/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=USER&password=PASS' \
   --duration 30 --min-confidence 0.60 --bandpass-fmax 8000
 
@@ -205,7 +135,7 @@ Confirmed-working example for the H00F hummingcam (Reolink RLC-811A at
 
 ```bash
 sudo pluginctl deploy -n birdnet-test \
-  registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 -- \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.2.1 -- \
   --camera 'http://10.107.0.221:10000/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=sage&password=SageCam!' \
   --duration 30 --min-confidence 0.60 --bandpass-fmax 8000
 ```
@@ -224,7 +154,7 @@ sudo pluginctl deploy -n birdnet-test \
 
 ```bash
 sudo pluginctl deploy -n birdnet-m16-test \
-  registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 -- \
+  registry.sagecontinuum.org/beckman/birdnet-species:0.2.1 -- \
   --camera 'http://USER:PASS@CAMERA_IP/control/faststream.jpg?stream=MxPEG&needlength' \
   --duration 30 --min-confidence 0.60 --bandpass-fmax 4000
 
@@ -269,58 +199,22 @@ export SES_HOST=https://es.sagecontinuum.org
 export SES_USER_TOKEN=<your-token-from-portal>
 ```
 
-### Step 2: Register the version in the ECR catalog (the "import" step)
+### Step 2: Confirm the version is built in ECR
 
-**This is the step most people miss.** SES validates a job's image against the
-ECR app *catalog* (`ecr.sagecontinuum.org`) — **not** the Docker registry and
-**not** the image you sideloaded into k3s. If the catalog has no record for your
-exact version, `sesctl submit` fails with:
-
-```
-[registry.sagecontinuum.org/<ns>/birdnet-species:<ver> does not exist in ECR]
-```
-
-Normally the ECR **portal** "Create App / add version" UI registers that catalog
-record (and builds the image) for you. But for Thor/arm64 NVIDIA-base plugins the
-portal *build* crashes under QEMU, and we serve the actual image by **sideloading**
-it into the node's k3s containerd instead (SES pods use
-`imagePullPolicy=IfNotPresent`, so a locally-present image is used as-is). All we
-then need from ECR is the catalog *metadata* record. Register it directly via the
-API with the helper script — it clones a known-good prior version's metadata,
-bumps the version + git source, and POSTs to `/api/submit`:
+With the ECR build fix in place, the version you tagged and built (see "Building
+via ECR" above) is already in the catalog and registry. Confirm it exists:
 
 ```bash
-python3 scripts/register-ecr-version.py \
-  --namespace beckman \
-  --name birdnet-species \
-  --from-version 0.1.3 \
-  --version 0.1.4 \
-  --git-url https://github.com/flint-pete/birdnet.git \
-  --token "$SAGE_TOKEN"
+# the app should be listed and public in the portal, at the version your job targets
+# (job YAML points at registry.sagecontinuum.org/beckman/birdnet-species:0.2.1)
 ```
 
-It prints `registered: beckman/birdnet-species:0.1.4` and lists the catalog
-versions. (Auth uses the `Authorization: Sage <token>` header; the token is your
-portal access token, which has write scope.)
-
-### Step 2b: Build + sideload the image onto the node
-
-The catalog record is metadata only — the image must actually be pullable. On
-Thor we build locally and sideload into k3s (no registry push needed):
-
-```bash
-cd ~/AI-projects/birdnet && git pull
-sudo docker build -t registry.sagecontinuum.org/beckman/birdnet-species:0.1.4 .
-sudo docker save registry.sagecontinuum.org/beckman/birdnet-species:0.1.4 \
-  | sudo k3s ctr images import -
-# verify:
-sudo k3s ctr images ls | grep birdnet-species:0.1.4
-```
-
-> **Why this works:** SES pods use `imagePullPolicy=IfNotPresent`. Because the
-> tag is already present in containerd, the kubelet uses it directly and never
-> contacts the registry. Tag the image with the **full registry path** so it
-> matches the job YAML's `image:` field exactly.
+SES validates a job's image against the ECR app **catalog** — if the catalog has
+no record for the exact version, `sesctl submit` fails with
+`[registry.sagecontinuum.org/beckman/birdnet-species:<ver> does not exist in ECR]`.
+The normal ECR build creates that record; only fall back to
+`scripts/register-ecr-version.py` if you deliberately side-loaded (see the
+historical fallback section above).
 
 ### Step 3: Create the job
 
@@ -428,12 +322,12 @@ explicitly** for fixed nodes (see the caveat below).
 
 ## Troubleshooting
 
-**"unrecognized arguments"** — The k3s image is stale. Rebuild and
-reimport:
+**"unrecognized arguments"** — The running image is stale. Rebuild via ECR
+(bump the version tag, re-Register and Build), or for a local one-shot test:
 ```bash
 cd ~/AI-projects/birdnet && git pull
-sudo docker build -t birdnet-species:0.1.1 .
-sudo docker save birdnet-species:0.1.1 | sudo k3s ctr images import -
+sudo docker build -t birdnet-species:0.2.1 .
+sudo docker save birdnet-species:0.2.1 | sudo k3s ctr images import -
 ```
 
 **ffmpeg "End of file" / exit 187 (Reolink)** — Wrong auth method.

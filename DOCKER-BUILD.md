@@ -1,15 +1,17 @@
 # Docker Build Guide
 
-> **Hitting a build/deploy blocker?** Known Sage platform bugs and their
-> workarounds (arm64/Thor build failures, buildkit `/proc/acpi`, registry push
-> denied, side-loading, node control-plane) are tracked in
-> `~/AI-projects/Infra-problems-to-fix.md` (issue-ready writeups for the
-> cyberinfra team).
+> **Status (2026-07-10):** The Thor/arm64 ECR build blocker (buildkit
+> `/proc/acpi` runc bug) is **fixed** — birdnet is now built by the standard
+> ECR "Register and Build" pipeline (release 0.2.1, from git tag `v0.2.1`) and
+> runs as an official SES job. The local-build + side-load path below is kept
+> for local testing and as a historical fallback, not the primary deploy route.
+> Remaining known platform notes are tracked in
+> `~/AI-projects/Infra-problems-to-fix.md`.
 
 ## Quick Build
 
 ```bash
-docker build -t birdnet-species:0.1.1 .
+docker build -t birdnet-species:0.2.1 .
 ```
 
 Build takes ~5-10 minutes. The Dockerfile:
@@ -29,13 +31,13 @@ Expect ~2-3 GB due to TensorFlow (pulled in by birdnet).
 # Dry-run with a test audio file
 docker run --rm \
   -v $(pwd)/tests/audio:/data \
-  birdnet-species:0.1.1 \
+  birdnet-species:0.2.1 \
   --input /data/search_sample.mp3 --dry-run
 
 # With geo-filtering (Chicago)
 docker run --rm \
   -v $(pwd)/tests/audio:/data \
-  birdnet-species:0.1.1 \
+  birdnet-species:0.2.1 \
   --input /data/soundscape.wav --dry-run \
   --lat 41.88 --lon -87.62 --week 22
 ```
@@ -75,121 +77,39 @@ replaces the `pluginctl deploy` approach, which dies on reboot and is
 invisible to the scheduler. Capture audio → classify → publish → exit,
 each cycle.
 
-### Why you build locally and sideload (not the ECR portal)
+### Deploy path: ECR "Register and Build" (standard)
 
-The documented Sage workflow is "Create App → Register and Build App" and
-the ECR portal builds the image from your GitHub repo. For Thor-targeted
-plugins that path is unreliable, for two reasons:
+The Thor buildkit bug is fixed, so birdnet deploys the standard way:
 
-- **The portal build can't make arm64 NVIDIA images.** The ECR/Jenkins
-  pipeline runs on **x86_64** and cross-builds `linux/arm64` under **QEMU
-  emulation**, which crashes on the NVIDIA base image (`signal 6 / exit
-  134`). BirdNET itself uses `python:3.12-slim` (CPU-only) so it does not
-  hit the QEMU crash — but sage-yolo and sage-bioclip do, and we keep all
-  three plugins on one identical deploy path so there is **one procedure to
-  learn**, not a special case per plugin.
-- **You cannot `docker push` to the registry.** A Sage portal access token
-  logs in fine but is **read/pull-only**; pushes return
-  `denied: requested access to the resource is denied`. Registry writes are
-  reserved for the Jenkins pipeline.
+1. **Tag the release** (version must match `sage.yaml`):
+   ```bash
+   git tag -a v0.2.1 -m "birdnet-species 0.2.1" && git push origin v0.2.1
+   ```
+2. **Register + Build** via the ECR portal (Portal → My Apps → birdnet-species →
+   add version from GitHub) or `scripts/register-ecr-version.py`. ECR builds
+   `linux/arm64` from `flint-pete/birdnet` using `sage.yaml` + `Dockerfile`
+   (`python:3.12-slim`, CPU-only — no CUDA/QEMU path). Make the app **public**.
+3. **Create + submit the SES cron job:**
+   ```bash
+   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
+       create -f jobs/birdnet-reolink.yaml      # returns a numeric job ID
+   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
+       submit -j <job-id>
+   ```
+   > `create` uses `-f`/`--file-path`; `submit` takes `-j <numeric-id>` (not the
+   > name). `rm -s <id>` suspends, `rm <id>` removes.
+4. **Verify it fires and publishes** (see below).
 
-So the reliable, uniform path for every Thor plugin is: build natively on
-Thor, tag with the full registry path, and sideload into k3s. This works
-because SES pods use **`imagePullPolicy: IfNotPresent`** — the scheduler
-uses a locally-cached image if one is already present in k3s containerd
-under the exact registry-qualified name, and never has to pull.
+**Currently deployed:** job `birdnet-reolink` (id 5678), image
+`registry.sagecontinuum.org/beckman/birdnet-species:0.2.1`, on H00F, `*/10` cron.
 
-### Step 1 — build natively on Thor (arm64, no QEMU)
+### Verifying it fires and publishes (the heartbeat)
 
-```bash
-cd ~/AI-projects/birdnet
-git pull
-sudo docker build -t registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 .
-```
-
-Note the tag is the **full registry path**, not the bare
-`birdnet-species:0.1.1`. This must exactly match the `image:` field in the
-job YAML so k3s finds the cached copy.
-
-### Step 2 — sideload into k3s containerd
-
-```bash
-sudo docker save registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 \
-  | sudo k3s ctr images import -
-```
-
-### Step 3 — verify it landed (and is CRI-managed)
-
-```bash
-sudo k3s ctr images ls | grep birdnet-species
-# Expect registry.sagecontinuum.org/beckman/birdnet-species:0.1.1
-# with io.cri-containerd.image=managed  (that label = k8s/SES can see it)
-```
-
-### Step 4 — register the version in the ECR catalog (metadata only)
-
-SES validates a job's image against the ECR app **catalog**
-(ecr.sagecontinuum.org), NOT against the raw Docker registry or the image
-you sideloaded. If the catalog has no record for your exact version,
-`sesctl submit` fails with:
-
-```
-[registry.sagecontinuum.org/beckman/birdnet-species:0.1.1 does not exist in ECR]
-```
-
-You do **not** need the portal UI (and you do **not** need the portal
-*build* to succeed) — you only need the catalog metadata record. Register
-it directly via the ECR API with the included helper script:
-
-```bash
-python3 scripts/register-ecr-version.py \
-    --namespace beckman \
-    --name birdnet-species \
-    --from-version 0.1.0 \
-    --version 0.1.1 \
-    --git-url https://github.com/flint-pete/birdnet.git \
-    --token "$SAGE_TOKEN"
-```
-
-The script clones an existing version's catalog record, bumps the version
-and git source, and POSTs it to `/api/submit` using the
-`Authorization: Sage <token>` header. It's idempotent (re-running a version
-that already exists is a no-op) and prints the resulting catalog listing.
-
-> **Under the hood:** that's a `POST https://ecr.sagecontinuum.org/api/submit`
-> with your Sage portal token. The one required field the API insists on is
-> `description`. The catalog record only satisfies SES validation — the
-> actual image still comes from your sideloaded copy via
-> `imagePullPolicy: IfNotPresent`.
-
-If you prefer the UI: Portal → My Apps → the app → add the version from
-GitHub. For BirdNET (`python:3.12-slim`, no QEMU) the portal build will
-even succeed; for the NVIDIA-base plugins it won't, but the catalog record
-still gets created, which is all SES needs.
-
-Either way, make the app **public** or SES returns
-`registry does not exist in ECR`.
-
-### Step 5 — create + submit the SES cron job
-
-Needs a write-scoped SES token in your interactive shell. The job YAML
-(`jobs/birdnet-reolink.yaml`) already points at `:0.1.1`:
-
-```bash
-sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
-    create -f jobs/birdnet-reolink.yaml      # returns a numeric job ID
-sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
-    submit -j <job-id>
-```
-
-### Step 6 — verify it fires and publishes (the heartbeat)
-
-The pod appears in the `ses` namespace each tick, runs ~30-40s, exits
-(one-shot), and is GC'd — so it's invisible between ticks. Confirm via the
-data API instead. As of 0.1.1 the plugin publishes
-`env.detection.audio.summary` **every cycle** (a heartbeat with
-`total_detections: 0` on quiet cycles), so the data API can confirm
-liveness even when no birds are detected:
+The pod appears in the `ses` namespace each tick, runs ~30-40s, exits (one-shot),
+and is GC'd — so it's invisible between ticks. Confirm via the data API instead.
+Since 0.2.0 the plugin publishes `env.detection.audio.summary` **every cycle**
+(a heartbeat with `total_detections: 0` on quiet cycles), so the data API
+confirms liveness even when no birds are detected:
 
 ```bash
 curl -s -X POST https://data.sagecontinuum.org/api/v1/query \
@@ -198,29 +118,47 @@ curl -s -X POST https://data.sagecontinuum.org/api/v1/query \
 ```
 
 A record every ~10 min = the job is alive. Per-species topics
-(`env.detection.audio.<scientific_name>`) appear only on actual detections.
-The proof it's the SES job (not a leftover hand-deployed pod) is in the
-record metadata: `"job": "birdnet-species-<id>"` and
-`"plugin": "registry.sagecontinuum.org/beckman/birdnet-species:0.1.1"`
-("already present on machine" in the pod events confirms the sideload hit).
+(`env.detection.audio.<scientific_name>`) appear only on actual detections. The
+record metadata identifies the job/image: `"job": "birdnet-species-<id>"` and
+`"plugin": "registry.sagecontinuum.org/beckman/birdnet-species:0.2.1"`.
 
 ### Re-deploying after a code change (new version)
 
-Bump the version everywhere (sage.yaml, Makefile, job YAML), then repeat
-build → sideload with the new tag. Because the tag changes, k3s uses the
-new local image on the next tick automatically; no job re-submit needed if
-the job YAML already points at the new tag (otherwise update + re-submit).
+Bump the version everywhere (`sage.yaml`, `Makefile`, job YAML), tag it, push the
+tag, and re-Register and Build in ECR. Update the job YAML's `image:` to the new
+tag and re-submit. No node-local steps needed.
 
-### Systemic fix (escalate to the ECR/cyberinfra team)
+### Local build + side-load (historical fallback — normally NOT needed)
 
-The sideload workaround is manual and per-node. The durable fix is one of:
+> Retained for local testing and offline/air-gapped bring-up. Not the deploy
+> route now that ECR builds birdnet. It was the workaround while the Thor build
+> was broken (buildkit `/proc/acpi` runc bug + pull-only portal tokens).
 
-- **(a)** Grant push/write access to `registry.sagecontinuum.org/beckman/`
-  for a Sage portal token, so `docker push` works after a native Thor build; or
-- **(b)** Add a **native arm64 build node** to the Jenkins ECR pipeline so
-  the portal "Register and Build" path works without QEMU.
+<details>
+<summary>Expand: build natively on the node → import into k3s</summary>
 
-Either unblocks every Thor-targeted plugin (yolo, bioclip, birdnet) and
-removes the manual sideload step entirely.
+Build on the node (arm64, no QEMU) tagged with the FULL registry path, import
+into k3s containerd (SES uses `imagePullPolicy: IfNotPresent`, so a locally
+present image under the exact tag is used without a registry pull), then register
+a catalog metadata record so SES validation passes:
+
+```bash
+cd ~/AI-projects/birdnet && git pull
+sudo docker build -t registry.sagecontinuum.org/beckman/birdnet-species:0.2.1 .
+sudo docker save registry.sagecontinuum.org/beckman/birdnet-species:0.2.1 \
+  | sudo k3s ctr images import -
+sudo k3s ctr images ls | grep birdnet-species:0.2.1   # expect io.cri-containerd.image=managed
+
+# catalog metadata record (only needed for a deliberately side-loaded image):
+python3 scripts/register-ecr-version.py \
+    --namespace beckman --name birdnet-species \
+    --from-version 0.2.0 --version 0.2.1 \
+    --git-url https://github.com/flint-pete/birdnet.git \
+    --token "$SAGE_TOKEN"
+```
+
+Then create + submit the job as usual. The pod events show *"already present on
+machine"*, confirming the side-loaded image was used.
+</details>
 
 See: https://sagecontinuum.org/docs/tutorials/edge-apps/publishing-to-ecr
