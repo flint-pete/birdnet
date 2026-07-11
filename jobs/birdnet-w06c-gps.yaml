@@ -1,0 +1,77 @@
+# BirdNET W06C (Grand Teton / AMK Ranch, Moran WY) — LIVE-GPS microphone job
+# ─────────────────────────────────────────────────────────────────────────────
+# Replaces gojian's avian-diversity-monitoring job on W06C with OUR
+# birdnet-species rewrite, matching his sampling/inference rate but adding
+# real eBird geo-filtering driven by the node's LIVE GPS.
+#
+# WHAT'S DIFFERENT vs the hardcoded-coords job (jobs/birdnet-w06c-mic.yaml):
+#   That job passed explicit --lat/--lon because, at the time, we believed W06C
+#   had no in-pod location source. VERIFIED 2026-07-11: W06C DOES publish a
+#   healthy live GPS stream — sys.gps.lat=43.94, sys.gps.lon=-110.64, mode 3
+#   (3D fix), 7–8 satellites, wes_gps_server sanity=OK, updating every ~2 min.
+#   So this job uses **--gps-subscribe** and NO hardcoded coordinates: the plugin
+#   auto-resolves its location from the live sys.gps.* data stream at startup.
+#   This is the whole point — location is now driven by the node's actual GPS,
+#   so the job is portable and self-locating (works unchanged if the node moves).
+#
+#   Resolution order when --lat/--lon are unset (app.py read_node_location):
+#     1. live sys.gps.* stream   (enabled by --gps-subscribe; W06C has it)
+#     2. node manifest file       (fallback; SES may not mount it in-pod)
+#     3. Waggle GPS env vars      (fallback)
+#     → if all fail, geo-filtering disables (still classifies vs global list).
+#   To force fixed coords instead, delete --gps-subscribe and add --lat/--lon.
+#
+# MATCHING gojian's current rate (observed on the data plane 2026-07-11):
+#   ~2-minute cadence, ~20 s audio capture (his old --sound_int 20), ~3 s
+#   inference. So: cron '*/2 * * * *' + --duration 20. Use '* * * * *' to match
+#   his exact per-minute cadence if desired (note: BirdNET reloads the model each
+#   one-shot tick — ~14 s cold start — so */2 wastes less time than */1).
+#
+# OTHER DEFAULTS (deliberate for W06C's full-quality ETS ML1-WS IP mic):
+#   --min-confidence 0.35 — inclusive floor for quiet/distant birds; the mic is
+#     clean 48 kHz (unlike the faint 16 kHz H00F Reolink substream), so no need
+#     to drop lower. Raise toward ~0.5 if the site proves noisy.
+#   NO --bandpass-fmax — the mic is full 48 kHz, so the default 15 kHz ceiling is
+#     correct. (The 8000 used on H00F is ONLY for the 16 kHz Reolink substream.)
+#   --save-match "*:0.5" — archive a FLAC clip for any detection >=0.5 (above the
+#     0.35 publish floor, so we only keep clips worth reviewing). Remove the arg
+#     to publish detection topics only and save no audio.
+#   NO --camera — birdnet defaults to the node microphone via wes-audio-server.
+#   NO gpu selector — BirdNET V2.4 is TFLite/CPU; it does not need the GPU.
+#
+# IMAGE: beckman/birdnet-species:0.2.1 is an ECR-built CPU plugin (python:3.12-
+#   slim, no CUDA), so it PULLS from the registry on W06C — no native build / no
+#   k3s side-load needed (unlike the NVIDIA-base yolo/bioclip plugins).
+#
+# Submit (verified sesctl syntax):
+#   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" create -f jobs/birdnet-w06c-gps.yaml
+#   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" submit -j <numeric-job-id>
+# Check:   sesctl ... stat -j <id>
+# Suspend: sesctl ... rm -s <id>
+# Remove:  sesctl ... rm <id>   (suspend first if Running)
+# ─────────────────────────────────────────────────────────────────────────────
+name: birdnet-w06c-gps
+plugins:
+  - name: birdnet-species
+    pluginSpec:
+      image: registry.sagecontinuum.org/beckman/birdnet-species:0.2.1
+      args:
+        - "--duration"
+        - "20"
+        - "--min-confidence"
+        - "0.35"
+        - "--save-match"
+        # Archive a FLAC clip for any detection >= 0.5 (above the publish floor).
+        # Remove this arg + value line to publish topics only, save no audio.
+        - "*:0.5"
+        # LIVE GPS: no --lat/--lon here on purpose. --gps-subscribe makes the
+        # plugin resolve its location from the node's live sys.gps.* stream at
+        # startup (W06C has a healthy 3D fix). Falls back to manifest/env if the
+        # live subscribe fails; geo-filter disables only if ALL sources fail.
+        - "--gps-subscribe"
+nodes:
+  W06C:
+scienceRules:
+  - "schedule(birdnet-species): cronjob('birdnet-w06c-gps-cron', '*/2 * * * *')"
+successcriteria:
+  - WallClock('30day')
