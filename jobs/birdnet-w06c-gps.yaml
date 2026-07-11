@@ -1,25 +1,21 @@
-# BirdNET W06C (Grand Teton / AMK Ranch, Moran WY) — LIVE-GPS microphone job
+# BirdNET W06C (Grand Teton / AMK Ranch, Moran WY) — microphone job
 # ─────────────────────────────────────────────────────────────────────────────
 # Replaces gojian's avian-diversity-monitoring job on W06C with OUR
-# birdnet-species rewrite, matching his sampling/inference rate but adding
-# real eBird geo-filtering driven by the node's LIVE GPS.
+# birdnet-species rewrite, matching his sampling/inference rate and adding real
+# eBird seasonal geo-filtering (which his job lacked).
 #
-# WHAT'S DIFFERENT vs the hardcoded-coords job (jobs/birdnet-w06c-mic.yaml):
-#   That job passed explicit --lat/--lon because, at the time, we believed W06C
-#   had no in-pod location source. VERIFIED 2026-07-11: W06C DOES publish a
-#   healthy live GPS stream — sys.gps.lat=43.94, sys.gps.lon=-110.64, mode 3
-#   (3D fix), 7–8 satellites, wes_gps_server sanity=OK, updating every ~2 min.
-#   So this job uses **--gps-subscribe** and NO hardcoded coordinates: the plugin
-#   auto-resolves its location from the live sys.gps.* data stream at startup.
-#   This is the whole point — location is now driven by the node's actual GPS,
-#   so the job is portable and self-locating (works unchanged if the node moves).
-#
-#   Resolution order when --lat/--lon are unset (app.py read_node_location):
-#     1. live sys.gps.* stream   (enabled by --gps-subscribe; W06C has it)
-#     2. node manifest file       (fallback; SES may not mount it in-pod)
-#     3. Waggle GPS env vars      (fallback)
-#     → if all fail, geo-filtering disables (still classifies vs global list).
-#   To force fixed coords instead, delete --gps-subscribe and add --lat/--lon.
+# LOCATION / GEO-FILTERING — explicit coords for now (live-GPS is a follow-up):
+#   W06C DOES publish a healthy live GPS stream (verified 2026-07-11:
+#   sys.gps.lat=43.94, lon=-110.64, mode 3 / 3D fix, 7-8 sats, ~2 min cadence),
+#   so the plan was to self-locate via --gps-subscribe. But a live test (job 5680,
+#   2026-07-11) proved that does NOT work yet: the app opens a 3 s
+#   plugin.subscribe on sys.gps.*, and with GPS publishing only every ~2 min the
+#   window almost always misses it -> "No node location available -> geo-filtering
+#   disabled" (classifies vs the GLOBAL list, not Teton-filtered). W06C is a FIXED
+#   node, so we pass its coords explicitly below to engage the eBird filter now.
+#   FOLLOW-UP (with pywaggle2): change the live-GPS path to read the LAST cached
+#   sys.gps.* value instead of a short subscribe, then drop --lat/--lon for true
+#   self-location (also enables mobile nodes). See app.py _coords_from_live_gps.
 #
 # MATCHING gojian's current rate (observed on the data plane 2026-07-11):
 #   ~2-minute cadence, ~20 s audio capture (his old --sound_int 20), ~3 s
@@ -64,11 +60,21 @@ plugins:
         # Archive a FLAC clip for any detection >= 0.5 (above the publish floor).
         # Remove this arg + value line to publish topics only, save no audio.
         - "*:0.5"
-        # LIVE GPS: no --lat/--lon here on purpose. --gps-subscribe makes the
-        # plugin resolve its location from the node's live sys.gps.* stream at
-        # startup (W06C has a healthy 3D fix). Falls back to manifest/env if the
-        # live subscribe fails; geo-filter disables only if ALL sources fail.
-        - "--gps-subscribe"
+        # GEO-FILTERING via explicit coords (W06C manifest gps_lat/gps_lon).
+        # WHY explicit and not live GPS: verified on 5680 (2026-07-11) that
+        # --gps-subscribe FAILS here — the app opens a 3 s plugin.subscribe on
+        # sys.gps.*, but W06C's device GPS only publishes every ~2 min, so the
+        # 3 s window misses it ~always ("No node location available — geo-
+        # filtering disabled"). W06C is a FIXED node, so its coords are stable;
+        # passing them explicitly engages the eBird seasonal filter immediately.
+        # FOLLOW-UP (pywaggle2): fix the live-GPS path to read the LAST cached
+        # sys.gps.* value (data-API/pywaggle2) instead of a short subscribe, then
+        # these two lines can be dropped in favor of self-location. See app.py
+        # _coords_from_live_gps + read_node_location.
+        - "--lat"
+        - "43.9402"
+        - "--lon"
+        - "-110.6441"
 nodes:
   W06C:
 scienceRules:
