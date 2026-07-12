@@ -49,8 +49,9 @@ python3 app.py --num-recordings 0 --duration 60 --interval 300
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--lat` | -1 | Latitude (-1 = auto-detect from node manifest) |
-| `--lon` | -1 | Longitude (-1 = auto-detect from node manifest) |
+| `--lat` | -1 | Latitude. -1 = auto-resolve (manifest / env; or live `sys.gps.*` with `--gps-subscribe`). |
+| `--lon` | -1 | Longitude. -1 = auto-resolve (same sources as `--lat`). |
+| `--gps-subscribe` | off | When auto-resolving, also try a live GPS fix via the node's `sys.gps.*` stream. NOTE: unreliable today (short subscribe vs slow GPS cadence) — pass `--lat`/`--lon` explicitly on fixed nodes. |
 | `--week` | auto | Week of year, 1–48. 'auto' = current week. -1 for year-round. |
 | `--sf-thresh` | 0.03 | Geo model species filter threshold |
 
@@ -65,7 +66,11 @@ python3 app.py --num-recordings 0 --duration 60 --interval 300
 
 ## Output
 
-Published to Waggle as:
+Detections are routed to three soundscape-ecology topics (v0.3.0+):
 
-- `env.detection.audio.<scientific_name>` — confidence per species
-- `env.detection.audio.summary` — JSON summary per cycle
+- `env.detection.biophony.<scientific_name>` — living organisms (birds/frogs/insects) — the biological signal, and the default bucket
+- `env.detection.anthrophony.<name>` — human-made (engine, siren, gun, power tools, dog, human…)
+- `env.detection.geophony.<name>` — abiotic ambient (noise, environmental)
+- `env.detection.audio.summary` — JSON summary/heartbeat per cycle, with per-category counts
+
+Each record carries `meta.category`. Query all families with `env.detection.*`.

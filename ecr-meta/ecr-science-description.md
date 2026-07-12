@@ -19,6 +19,8 @@ In  such a figure we can see the migratory species occurrence correlation (r) be
 
 This plugin uses **BirdNET V2.4**, a deep neural network designed for bird sound recognition of 6,522 species worldwide (birds, frogs, and insects). The model uses an EfficientNetB0-like architecture with dual mel-spectrograms (0–3 kHz and 500 Hz–15 kHz) analyzing 3-second audio chunks at 48 kHz. It includes a built-in eBird geo model for location-aware species filtering — when provided with latitude, longitude, and week of year, the model restricts predictions to species expected at that location and time.
 
+The label set also includes non-biological "distractor" classes (engines, sirens, human sounds, ambient noise). Rather than discard these, the plugin routes detections into three **soundscape-ecology** categories — **biophony** (life), **anthrophony** (human-made), and **geophony** (abiotic ambient) — on separate topics, so a study can analyze the biological signal in isolation or use the non-biological detections as an acoustic-environment/disturbance record (see Ontology).
+
 Audio can be captured from three sources: a USB microphone connected directly to the node, a network-attached camera (Mobotix MxPEG, RTSP, or any ffmpeg-compatible source), or local audio files for batch processing.
 
 # Using the code
@@ -85,13 +87,18 @@ sources in order and using the first that succeeds: (1) the node manifest file;
 override auto-resolution. If no source is available, geo-filtering is disabled
 and the plugin runs against the full global species list (logged clearly).
 
-> **pywaggle note:** as of pywaggle 0.56 there is no first-class location/GPS
-> accessor (no `waggle.data.gps`, no `Plugin.get_location()`). The only live-GPS
-> mechanism is the `sys.gps.*` measurement stream, hence `--gps-subscribe`. On
-> Sage today, SES does not mount the node manifest into plugin pods and fixed
-> nodes have no GPS publisher, so for a fixed node like H00F you must pass
-> `--lat`/`--lon` explicitly. A proper fix belongs upstream (a pywaggle location
-> API + WES injecting node GPS into the plugin environment).
+> **pywaggle / live-GPS note:** as of pywaggle 0.56 there is no first-class
+> location/GPS accessor (no `waggle.data.gps`, no `Plugin.get_location()`). The
+> only live-GPS mechanism is the `sys.gps.*` measurement stream, hence
+> `--gps-subscribe`. **Caveat (verified on W06C, 2026-07):** even on a
+> GPS-equipped node, `--gps-subscribe` often fails to get a fix — the plugin
+> opens a short (~3 s) subscribe on `sys.gps.*`, but device-GPS publishers emit
+> only every ~2 min, so the window usually misses it and geo-filtering falls
+> back to disabled. Until this is fixed (read the last *cached* `sys.gps.*` value
+> instead of a short subscribe — a pywaggle2 follow-up), **pass `--lat`/`--lon`
+> explicitly on fixed nodes** (both H00F and W06C do this). The proper fix
+> belongs upstream: a pywaggle location API + WES injecting node GPS into the
+> plugin environment.
 
 ### Runtime
 
@@ -144,11 +151,34 @@ saves the whole clip **once** (it is not uploaded per detection).
 
 # Ontology
 
-Detections are published to Waggle as:
+BirdNET V2.4's label set is not birds-only — alongside real taxa it carries a
+small fixed set of human-made and abiotic "distractor" classes (Engine, Siren,
+Noise, Human*, Dog, Power tools, Fireworks, Gun, Environmental). As of **v0.3.0**
+detections are routed to three standard **soundscape-ecology** topics so
+consumers can separate biological signal from anthropogenic/geophysical sound:
 
-- **`env.detection.audio.<scientific_name>`** — confidence (0–1) per species per detection window
-- **`env.detection.audio.summary`** — JSON summary per cycle with unique species and top confidences. Published EVERY cycle (heartbeat), even with zero detections, so the data plane proves the job ran.
+- **`env.detection.biophony.<scientific_name>`** — living organisms (birds,
+  frogs, insects, a few mammals): the biological signal. This is the **default
+  bucket** — any class not in the human-made/abiotic sets is biophony, so new
+  species in future model releases classify here automatically.
+- **`env.detection.anthrophony.<name>`** — human-made sound: Engine, Siren, Gun,
+  Power tools, Fireworks, Dog, Human vocal/non-vocal/whistle.
+- **`env.detection.geophony.<name>`** — non-biological ambient: Noise, Environmental.
+- **`env.detection.audio.summary`** — JSON summary per cycle. Published EVERY
+  cycle (heartbeat), even with zero detections, so the data plane proves the job
+  ran. Carries `total_detections`, `unique_species`, per-category counts
+  (`biophony` / `anthrophony` / `geophony`), and the top species each with a
+  `category` field.
 - **`upload`** (audio clip) — the recorded clip, uploaded only when a detection matches a `--save-match` rule (see above). Saved as **lossless FLAC** (`.flac`): ~50-70% smaller than WAV with no quality loss, and the Sage portal query-browser renders an inline `<audio>` player for `.flac` uploads (it does not for `.wav`/`.mp3`). Meta carries `top_species`, `common_name`, `confidence`.
+
+Every per-detection record also carries `meta.category` naming its bucket.
+
+> **Migration (v0.2.x → v0.3.0):** consumers previously keyed on
+> `env.detection.audio.<species>` must move to
+> `env.detection.biophony.<species>`; human-made/abiotic sounds now live under
+> `anthrophony`/`geophony` instead of `audio`. The `env.detection.audio.summary`
+> heartbeat topic is unchanged in name. Query all detection families at once with
+> the wildcard `env.detection.*` (the plugin's declared ontology).
 
 ## Performance Telemetry
 
@@ -202,13 +232,17 @@ python3 tests/test_save_match.py    # => "29 passed, 0 failed (29 total)"
 ```python
 import sage_data_client
 
+# All detection families (biophony + anthrophony + geophony) + summary:
 df = sage_data_client.query(
     start="-1h",
     filter={
-        "name": "env.detection.audio.*",
+        "name": "env.detection.*",
     }
 )
 print(df)
+
+# Just the biological signal (birds/frogs/insects):
+bio = sage_data_client.query(start="-1h", filter={"name": "env.detection.biophony.*"})
 ```
 
 # Deployment Notes & Known Behavior
@@ -306,6 +340,7 @@ This plugin was rewritten from the original BirdNET Lite Plugin (v0.2.5) to use 
 ## Infrastructure Changes
 
 - **Docker base image:** `nvcr.io/nvidia/l4t-tensorflow:r32.4.4` → `python:3.12-slim` (no GPU needed — CPU TFLite inference)
-- **Waggle topics:** `env.detection.avian.*` → `env.detection.audio.*` (broader scope: birds + frogs + insects)
+- **Waggle topics:** `env.detection.avian.*` → `env.detection.audio.*` (v0.2.x,
+  broader scope: birds + frogs + insects) → **`env.detection.{biophony,anthrophony,geophony}.*`** (v0.3.0, category-routed; see Ontology)
 - **Test suite:** 9 North American bird audio tests with species validation and 5% confidence tolerance
 - **Test audio:** committed to git — no runtime downloads, fully self-contained
