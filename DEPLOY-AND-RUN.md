@@ -42,7 +42,23 @@ This is now the primary path — no node-local build, no side-load.
    builds `linux/arm64` from `flint-pete/birdnet` using `sage.yaml` + `Dockerfile`.
    BirdNET uses a CPU-only `python:3.12-slim` base (no CUDA/QEMU path), so the
    build is clean.
-3. **Make the app public**, or SES returns `registry ... does not exist in ECR`.
+3. **Make the app version PUBLIC** (portal toggle, or API — see below). A
+   freshly-built ECR image is **private by default**. Skipping this fails
+   *per-node* in a confusing way: a node with cached registry creds pulls it
+   fine, but a node pulling anonymously gets `ErrImagePull` /
+   `insufficient_scope: authorization failed` → `ImagePullBackOff` (verified
+   0.3.0, 2026-07-11: W06C ran while H00F sat in backoff on the SAME tag, purely
+   because it wasn't public). Grant public read on the repository via API:
+   ```bash
+   curl -s -X PUT -H "Authorization: Sage $SAGE_TOKEN" -H 'Content-Type: application/json' \
+     https://ecr.sagecontinuum.org/api/permissions/beckman/birdnet-species \
+     -d '{"operation":"add","granteeType":"GROUP","grantee":"AllUsers","permission":"READ"}'
+   # verify: GET /api/permissions/beckman/birdnet-species lists AllUsers GROUP READ
+   ```
+   An already-backed-off pod won't re-pull instantly (exponential backoff). To
+   confirm + expedite, force a pull on the node:
+   `sudo k3s ctr images pull registry.sagecontinuum.org/beckman/birdnet-species:<ver>`
+   — a clean pull proves it's public and pre-caches it so the next tick uses it.
 
 Once the build succeeds, the image is pullable fleet-wide and SES can schedule it
 on any node — proceed to "Scheduled Deployment (sesctl)" below.
