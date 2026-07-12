@@ -50,7 +50,7 @@ name: birdnet-w06c-gps
 plugins:
   - name: birdnet-species
     pluginSpec:
-      image: registry.sagecontinuum.org/beckman/birdnet-species:0.2.1
+      image: registry.sagecontinuum.org/beckman/birdnet-species:0.3.0
       args:
         - "--duration"
         - "20"
