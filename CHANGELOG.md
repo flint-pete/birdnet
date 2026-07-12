@@ -2,6 +2,38 @@
 
 All notable changes to the `birdnet-species` Sage plugin.
 
+## 0.3.0 — 2026-07-11
+
+### Changed
+- **Detections now route to three soundscape-ecology topics instead of one.**
+  BirdNET V2.4's label set is not birds-only — it includes fixed human-made and
+  abiotic "distractor" classes (Engine, Siren, Noise, Human*, Dog, Power tools,
+  Fireworks, Gun, Environmental) that previously published under the same
+  `env.detection.audio.<name>` namespace as real taxa. Detections now publish to:
+  - `env.detection.biophony.<scientific_name>` — living organisms (birds, frogs,
+    insects, a few mammals) — the biological signal. **Default bucket**: any class
+    not in the human-made/abiotic sets is biophony, so future model species land
+    here automatically.
+  - `env.detection.anthrophony.<name>` — human-made sound (engine, siren, gun,
+    power tools, fireworks, dog, human vocal/non-vocal/whistle).
+  - `env.detection.geophony.<name>` — abiotic ambient (noise, environmental).
+  Each record's `meta.category` names its bucket. The
+  `env.detection.audio.summary` heartbeat is unchanged in name (still published
+  every cycle, incl. quiet cycles) but now carries per-category counts
+  (`biophony` / `anthrophony` / `geophony`) and a `category` field per species.
+  Implemented via `sound_category()` in `app.py`.
+- `sage.yaml` ontology broadened `env.detection.audio.*` → `env.detection.*` to
+  cover all three routed topics plus the summary.
+
+### Migration
+- Consumers keyed on `env.detection.audio.<species>` must move to
+  `env.detection.biophony.<species>` (human-made sounds now live under
+  `anthrophony`/`geophony`). The `env.detection.audio.summary` topic is unchanged.
+
+### Deferred
+- Scoping `--save-match` to biophony-only (don't archive FLAC clips of engines /
+  noise) is captured in `FUTURE-ENHANCEMENTS.md`, not in this release.
+
 ## 0.2.1 — 2026-06-24
 
 ### Changed

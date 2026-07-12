@@ -17,9 +17,11 @@ predictions to species expected at the node's location and time.
 Model: BirdNET V2.4 (EfficientNetB0-like, 77 MB TFLite FP32, 0.826 GFLOPs)
 Audio: 3-second chunks at 48 kHz, dual mel-spectrograms
 
-Measurement topics:
-  env.detection.audio.<scientific_name>  — confidence (0–1) per species
-  env.detection.audio.summary            — JSON summary of all detections
+Measurement topics (routed by soundscape-ecology category):
+  env.detection.biophony.<scientific_name>    — living organisms (birds/frogs/insects)
+  env.detection.anthrophony.<name>            — human-made (engine, siren, dog…)
+  env.detection.geophony.<name>               — abiotic ambient (noise, environmental)
+  env.detection.audio.summary                 — JSON summary/heartbeat of all detections
 """
 import argparse
 import json
@@ -236,33 +238,71 @@ def record_from_camera(url: str, duration_s: float, sample_rate: int = 48000) ->
 
 
 # ── publishing ──────────────────────────────────────────────────────
-def publish_detections(plugin, detections: list[dict], timestamp: int):
-    """Publish detections to Waggle.
+# BirdNET V2.4's label set is NOT birds-only: alongside real taxa (birds, frogs,
+# insects, a few mammals) it carries a small, fixed set of human-made and abiotic
+# "distractor" classes (Engine, Siren, Noise, …). We route detections to three
+# standard soundscape-ecology topics so consumers can separate biological signal
+# from anthropogenic/geophysical sound:
+#   biophony    — living organisms (the science signal): birds, frogs, insects…
+#   anthrophony — human-made: engines, sirens, guns, power tools, fireworks, dogs
+#   geophony    — non-biological ambient: undifferentiated noise, environmental
+# The non-biophony classes are enumerated below (in the label file their
+# scientific == common name). Anything NOT listed is treated as biophony, so new
+# species in future model releases default to the biological bucket automatically.
+ANTHROPHONY_CLASSES = {
+    "Engine", "Siren", "Gun", "Fireworks", "Power tools", "Dog",
+    "Human vocal", "Human non-vocal", "Human whistle",
+}
+GEOPHONY_CLASSES = {"Noise", "Environmental"}
 
-    Per-species topics are published only when a detection is present, but the
-    summary topic is ALWAYS published — even with zero detections — so the data
-    API carries a per-cycle heartbeat that proves the job ran. This lets us
-    distinguish "running fine, no birds" from "job is dead" via the data API.
+
+def sound_category(scientific_name: str) -> str:
+    """Map a BirdNET class to its soundscape-ecology category.
+
+    Returns 'anthrophony' (human-made), 'geophony' (abiotic ambient), or
+    'biophony' (any living organism — the default for real taxa).
+    """
+    if scientific_name in ANTHROPHONY_CLASSES:
+        return "anthrophony"
+    if scientific_name in GEOPHONY_CLASSES:
+        return "geophony"
+    return "biophony"
+
+
+def publish_detections(plugin, detections: list[dict], timestamp: int):
+    """Publish detections to Waggle, routed by soundscape-ecology category.
+
+    Each detection publishes to env.detection.<category>.<name> where category is
+    biophony / anthrophony / geophony (see sound_category). Per-detection topics
+    appear only when a detection is present, but the summary topic is ALWAYS
+    published — even with zero detections — so the data API carries a per-cycle
+    heartbeat that proves the job ran. This lets us distinguish "running fine, no
+    birds" from "job is dead" via the data API.
     """
     for det in detections:
+        category = sound_category(det["scientific_name"])
         topic_name = det["scientific_name"].lower().replace(" ", "_")
         plugin.publish(
-            f"env.detection.audio.{topic_name}",
+            f"env.detection.{category}.{topic_name}",
             det["confidence"],
             timestamp=timestamp,
             # pywaggle requires meta values to be strings — stringify the floats.
             meta={
                 "common_name": str(det["common_name"]),
+                "category": category,
                 "start_time_s": str(det["start_time"]),
                 "end_time_s": str(det["end_time"]),
             },
         )
 
-    # Always publish a summary (heartbeat). The per-species loop above already
+    # Always publish a summary (heartbeat). The per-detection loop above already
     # does nothing when `detections` is empty, so total_detections == 0 is the
-    # quiet-cycle signal.
+    # quiet-cycle signal. The summary carries a per-category breakdown so a
+    # consumer can read biophony vs anthrophony vs geophony counts at a glance.
     species_best = {}
+    cat_counts = {"biophony": 0, "anthrophony": 0, "geophony": 0}
     for det in detections:
+        cat_counts[sound_category(det["scientific_name"])] += 1
         key = det["scientific_name"]
         if key not in species_best or det["confidence"] > species_best[key]["confidence"]:
             species_best[key] = det
@@ -270,11 +310,15 @@ def publish_detections(plugin, detections: list[dict], timestamp: int):
     summary = {
         "total_detections": len(detections),
         "unique_species": len(species_best),
+        "biophony": cat_counts["biophony"],
+        "anthrophony": cat_counts["anthrophony"],
+        "geophony": cat_counts["geophony"],
         "species": [
             {
                 "scientific_name": d["scientific_name"],
                 "common_name": d["common_name"],
                 "confidence": round(d["confidence"], 4),
+                "category": sound_category(d["scientific_name"]),
             }
             for d in sorted(species_best.values(), key=lambda x: x["confidence"], reverse=True)
         ],

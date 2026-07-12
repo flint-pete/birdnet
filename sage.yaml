@@ -1,6 +1,6 @@
 name: "birdnet-species"
 description: "Records audio, identifies bird/frog/insect species using BirdNET V2.4, publishes detections"
-version: "0.2.1"
+version: "0.3.0"
 namespace: "sage"
 authors: "Pete Beckman <pete.beckman@northwestern.edu>"
 collaborators: "Dario Dematties (original avian-diversity-monitoring plugin)"
@@ -62,4 +62,6 @@ inputs:
   type: "string"
 
 metadata:
-  ontology: env.detection.audio.*
+  # Three routed detection topics (biophony/anthrophony/geophony) + the audio.*
+  # summary heartbeat — the wildcard covers all of them.
+  ontology: env.detection.*
