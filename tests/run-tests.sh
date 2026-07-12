@@ -25,6 +25,12 @@ if [[ "${1:-}" == "--docker" ]]; then
     USE_DOCKER=true
 fi
 
+# Image tag: read VERSION from the Makefile so tests always exercise the tag the
+# Makefile builds (don't hardcode — that silently drifts, e.g. testing a stale
+# 0.1.1 image after the build produced 0.3.0).
+VERSION="$(sed -nE 's/^VERSION[[:space:]]*:=[[:space:]]*([0-9.]+).*/\1/p' Makefile | head -n1)"
+IMAGE="birdnet-species:${VERSION:-latest}"
+
 # Check for test audio
 if [ ! -d "$AUDIO_DIR" ] || [ -z "$(ls "$AUDIO_DIR"/*.wav "$AUDIO_DIR"/*.mp3 2>/dev/null)" ]; then
     echo "ERROR: No test audio files found in $AUDIO_DIR"
@@ -33,9 +39,9 @@ if [ ! -d "$AUDIO_DIR" ] || [ -z "$(ls "$AUDIO_DIR"/*.wav "$AUDIO_DIR"/*.mp3 2>/
 fi
 
 if $USE_DOCKER; then
-    if ! docker image inspect birdnet-species:0.1.1 >/dev/null 2>&1; then
-        echo "ERROR: Docker image birdnet-species:0.1.1 not found"
-        echo "Run: docker build -t birdnet-species:0.1.1 ."
+    if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+        echo "ERROR: Docker image $IMAGE not found"
+        echo "Run: docker build -t $IMAGE ."
         exit 1
     fi
 fi
@@ -65,7 +71,7 @@ echo "=========================================================="
 echo " BirdNET Plugin Test Suite"
 echo " Tolerance: ±${TOLERANCE} (5%)"
 if $USE_DOCKER; then
-    echo " Mode: Docker (birdnet-species:0.1.1)"
+    echo " Mode: Docker ($IMAGE)"
 else
     echo " Mode: Native (Python venv)"
 fi
@@ -96,7 +102,7 @@ for entry in "${EXPECTED[@]}"; do
         CSV_NAME="__test_result_$$.csv"
         docker run --rm \
             -v "$AUDIO_DIR:/data" \
-            birdnet-species:0.1.1 \
+            "$IMAGE" \
             --input "/data/$file" --dry-run \
             --min-confidence 0.10 --output "/data/$CSV_NAME" >/dev/null 2>&1
         cp "$AUDIO_DIR/$CSV_NAME" "$CSV_TMP" 2>/dev/null || true
