@@ -6,7 +6,7 @@
 > runs as an official SES job. The local-build + side-load path below is kept
 > for local testing and as a historical fallback, not the primary deploy route.
 > Remaining known platform notes are tracked in
-> `~/AI-projects/Infra-problems-to-fix.md`.
+> `~/AI-projects/sage-design-planning/Infra-problems-to-fix.md`.
 
 ## Quick Build
 

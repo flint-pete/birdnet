@@ -50,5 +50,5 @@ on mobile deployments, no per-node coordinate edits.
 pywaggle2 accessor) instead of a short live subscribe — a fix is available
 instantly regardless of publish cadence. When it lands, the explicit `--lat/--lon`
 in `jobs/birdnet-w06c-gps.yaml` can be dropped in favor of `--gps-subscribe`.
-See also the platform note in `~/AI-projects/Infra-problems-to-fix.md` about
+See also the platform note in `~/AI-projects/sage-design-planning/Infra-problems-to-fix.md` about
 runtime GPS/VSN injection.

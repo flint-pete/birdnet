@@ -7,7 +7,7 @@
 > so the manual side-load workaround is **no longer required**. Side-loading is
 > retained below only as a historical fallback for offline/air-gapped bring-up.
 > Remaining known platform notes (runtime GPS/VSN injection, data-API
-> `meta.task` gotcha) are tracked in `~/AI-projects/Infra-problems-to-fix.md`.
+> `meta.task` gotcha) are tracked in `~/AI-projects/sage-design-planning/Infra-problems-to-fix.md`.
 
 ## Prerequisites
 
