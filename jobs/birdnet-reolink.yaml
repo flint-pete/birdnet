@@ -27,7 +27,7 @@
 #   (&user=...&password=...). Basic auth returns ffmpeg "End of file"/exit 187.
 #
 # Confirmed-working URL form (H00F hummingcam, Reolink RLC-811A):
-#   http://10.107.0.221:10000/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=sage&password=SageCam!
+#   http://10.107.0.221:10000/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=sage&password=<PASSWORD>
 #
 # Sub-stream is 16 kHz audio -> use --bandpass-fmax 8000 (8 kHz Nyquist).
 # Week auto-calculated.
@@ -48,7 +48,7 @@ plugins:
         - "--camera"
         # Reolink FLV/BCS URL — credentials as QUERY PARAMS, not basic auth.
         # Replace IP/port/user/password for your node's camera.
-        - "http://10.107.0.221:10000/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=sage&password=SageCam!"
+        - "http://10.107.0.221:10000/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=sage&password=<PASSWORD>"
         - "--duration"
         - "30"
         - "--min-confidence"

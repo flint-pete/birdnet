@@ -152,7 +152,7 @@ Confirmed-working example for the H00F hummingcam (Reolink RLC-811A at
 ```bash
 sudo pluginctl deploy -n birdnet-test \
   registry.sagecontinuum.org/beckman/birdnet-species:0.2.1 -- \
-  --camera 'http://10.107.0.221:10000/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=sage&password=SageCam!' \
+  --camera 'http://10.107.0.221:10000/flv?port=1935&app=bcs&stream=channel0_sub.bcs&user=sage&password=<PASSWORD>' \
   --duration 30 --min-confidence 0.60 --bandpass-fmax 8000
 ```
 
